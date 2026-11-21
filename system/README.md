@@ -14,13 +14,13 @@ For each screening hit we decide **SAME_ENTITY**, **DIFFERENT_ENTITY**, or **REV
 | Wrongful clears | **0** |
 | `validate.py --score` | decision score **100.0**, 0 problems |
 | Decisions | **465** DIFFERENT_ENTITY / **122** SAME_ENTITY / **232** REVIEW (**72%** resolved automatically) |
-| Reproducibility | 5 runs, byte-identical — MD5 `B9D645D65E66CD76C067984170E16830` |
+| Reproducibility | 5 runs, byte-identical — MD5 `72bc532a9dfcaad410d69a8439eb833d` |
 | Runtime | ~10 s (Python 3 stdlib only) |
-| Cost | **£0** (no API, no LLM) |
-| SOP rule tests | **17** passing (`tests/test_sop_rules.py`) |
-| Wording-mutation test | **0** true matches turned into DIFFERENT_ENTITY |
+| Cost | **£0** (no API, no LLM required) |
+| SOP rule tests | **20** passing (`tests/test_sop_rules.py`) |
+| Unseen-wording mutation | **0** SAME/REVIEW → DIFFERENT (`harness/unseen_wording.py`) |
 
-Tagged engine: `submission-engine` @ `ae502fe`.
+50/50 and 0 unsafe clears are measured on the 50 practice labels only. The other 769 dev hits have no labels, which is why we built rule tests and mutation tests.
 
 Reproduce the numbers:
 
@@ -36,7 +36,7 @@ for i in 1 2 3 4 5; do
 done
 
 # wording-mutation: SAME/REVIEW -> DIFFERENT must stay 0
-python _mutate_freetext.py
+python3 harness/unseen_wording.py --data ../dev
 ```
 
 ## Architecture
@@ -54,19 +54,32 @@ decide_hit() wraps multi-person / AMBIGUOUS cases
 
 **Resolve.** `resolve()` follows the alert link in order: `account_ref`, then `login_handle`, then `email`. If several account holders share a link, `fits_screened()` keeps those whose name, DOB, country and city match what was screened. With no link, it searches customer name parts and applies the same filter. `group_persons()` then merges records that share a phone number and a full date of birth, or the same approved document number, into one person.
 
-**Customer facts.** `customer_facts()` collects every **approved** identity check from both sources — KYC provider checks and KYC-channel notes — and takes the most recent by date (principle 4: “whether it is recorded by the KYC provider or only in a note by the onboarding team”). Rejected and expired checks are ignored. Residence, nationality, document country and places notes say they lived become the country set.
+**Customer facts.** `customer_facts()` collects every **approved** identity check from both sources — KYC provider checks and KYC-channel notes — and takes the most recent by date (principle 4: “whether it is recorded by the KYC provider or only in a note by the onboarding team”). Rejected and expired checks are ignored. Failed / pending / rejected KYC **notes** yield no identity fields. Residence, nationality, document country and places notes say they lived become the country set.
 
 **Hit facts.** `hit_dobs()` reads the `dobs` field, then the first paragraph of profile notes (an age at a dated event yields two possible birth years), then search snippets only when they carry the listing phrase for the hit’s category **and** a country tied to the hit. Companies use the `dobs` field only. Dated reports are the English lines `According to …; Month DD, YYYY:` via `earliest_report()`.
 
-**Decide.** `decide_person()` tests contradictions first (time, deceased, DOB, location, verified name, entity type — principle 6). If none fire, it tests agreement (principle 7). Name and DOB that agree while every country differs become REVIEW, not a clear and not a confirm. `decide_hit()` runs that per person; if several people fit and disagree, the decision is `AMBIGUOUS_CUSTOMER_RECORD` with `customer_record_id` `AMBIGUOUS`; if they agree, that decision is kept and the id is still `AMBIGUOUS`.
+**Decide.** `decide_person()` tests contradictions first (time, deceased, DOB, location, verified name, entity type — principle 6). If none fire, it tests agreement (principle 7). Name and DOB that agree while every country differs become REVIEW, not a clear and not a confirm. Ambiguous numeric customer DOBs (`03/04/1965`) clear on `DOB_MISMATCH` only when every day/month reading contradicts the hit. `decide_hit()` runs that per person; if several people fit and disagree, the decision is `AMBIGUOUS_CUSTOMER_RECORD` with `customer_record_id` `AMBIGUOUS`; if they agree, that decision is kept and the id is still `AMBIGUOUS`.
 
 ## Evidence and policy trace
 
 Every row cites only the IDs that decided the hit (`evidence`, `customer_record_id`), exactly as they appear in the files (principle 9). Pass `--debug` to attach a per-hit `trace`: principle number, the exact `POLICY.md` sentence, the fact sentences, whether a free-text guard fired (`fragile_guard`), and the resolution path. The reason-code ↔ principle map is generated from the engine’s `POLICY_RULES` table — see [`docs/POLICY_MAP.md`](../docs/POLICY_MAP.md).
 
-## Determinism — no model, no prompts
+Display the trace with [`console/trace.py`](../console/trace.py): it reads `system/run … --debug` JSONL and writes a static HTML page. It never decides anything; it only shows what the engine already decided. Generated HTML is gitignored because it contains dev data.
 
-The engine is pure Python 3 standard library: no LLM, no network, no randomness, stable sort orders. We chose that on purpose. Judges must be able to re-run the same folder and get the same bytes; every clear must point at a named record; and an unsafe clear is scored at 60. A generative model cannot give those guarantees.
+```bash
+system/run ../dev output/debug.jsonl --debug
+python3 console/trace.py --debug output/debug.jsonl --data ../dev --out /tmp/sniff-trace.html
+```
+
+## Determinism — rules first
+
+The engine is pure Python 3 standard library by default: no LLM, no network, no randomness, stable sort orders. Judges must be able to re-run the same folder and get the same bytes; every clear must point at a named record; and an unsafe clear is scored at 60. We chose rules over a model for auditability and reproducibility. An LLM locator with code-side verification is our adaptive layer (see How SNIFF adapts).
+
+## How SNIFF adapts
+
+**The AI points. The code reads. The policy decides.**
+
+When regex parsing misses a fact, an optional OpenRouter locator (`system/llm_locate.py`, branch `adaptive-llm` when merged) may return an exact quote from the source text. Our existing parsers and SOP rules still extract and decide. The locator never invents facts, never decides SAME/DIFFERENT/REVIEW, and stays off unless `OPENROUTER_API_KEY` is set and `SNIFF_LLM` is not `"off"`.
 
 ## Safety on unseen wording
 
@@ -74,9 +87,17 @@ KYC notes are free text. Guards keep shaky parses from clearing or confirming:
 
 - a placeholder or unverifiable note name cannot clear on name;
 - a note DOB needs a birth keyword nearby, or must be the only non-created date in the note;
-- Title Case note names, after-only keyword DOBs, and note DOBs paired with a failed name check cannot confirm SAME — they fall back to REVIEW.
+- Title Case note names, after-only keyword DOBs, and note DOBs paired with a failed name check cannot confirm SAME — they fall back to REVIEW;
+- failed / rejected / pending KYC notes yield no identity evidence.
 
-A wording-mutation test rewrites DOB phrasing and name casing across the official set: **0** SAME or REVIEW hits became DIFFERENT_ENTITY.
+`harness/unseen_wording.py` paraphrases DOB phrasing, Title Case names, residence notes, numeric MM/DD dates, shuffled paragraphs, and already-failed KYC wording across the official set: **0** SAME or REVIEW hits became DIFFERENT_ENTITY. On seed 7: 10 original clearances and 43 confirmations moved to REVIEW (safe conservatism); 761 decision+code pairs retained.
+
+## Known gaps
+
+- Unseen note wording falls back to REVIEW.
+- Ambiguous numeric dates.
+- Phone formats (`+44` versus `0`).
+- Approximate ages (“in his 40s”) are not parsed.
 
 ## Three real cases
 
@@ -112,18 +133,19 @@ Regex parsing of free text can miss wordings we have not seen; the mitigation is
 
 - `system/` — the engine (scored)
 - `output/dev.jsonl` — predictions on the dev set
-- `tests/test_sop_rules.py` — 17 rule tests for situations rare in the dev data
+- `tests/test_sop_rules.py` — 20 rule tests for situations rare in the dev data
 - `docs/POLICY_MAP.md` — each reason code mapped to its exact policy sentence
-- `harness/` — test-to-fail mutation harness. Results: 108 mutations from 12 true matches: 85 stayed SAME, 15 moved to REVIEW, 8 correctly became DIFFERENT when we injected a verified conflicting date of birth. Unsafe clears: 0.
+- `harness/` — test-to-fail mutation harness (108 mutations, 0 unsafe clears) and `unseen_wording.py` (0 unsafe flips)
 - `baseline/` — name-only foil baseline
-- `console/` — static policy-trace viewer built on `--debug`. [to be added]
+- `console/trace.py` — static policy-trace viewer built on `--debug`
 
 ## How to run
 
 ```bash
 system/run <data folder> <output file>
 system/run <data folder> <output file> --debug          # adds path + policy trace per hit
-python -m unittest tests.test_sop_rules                 # 17 SOP rule tests
+python -m unittest tests.test_sop_rules                 # 20 SOP rule tests
+python3 harness/unseen_wording.py --data <data folder>
 ```
 
-Python 3 standard library only. Output is one JSON object per line: `hit_id`, `alert_id`, `decision`, `reason_code`, `customer_record_id`, `reason`, `evidence`.
+Python 3 standard library only (optional adaptive locator is isolated). Output is one JSON object per line: `hit_id`, `alert_id`, `decision`, `reason_code`, `customer_record_id`, `reason`, `evidence`.

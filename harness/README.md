@@ -50,6 +50,14 @@ python3 harness/mutate.py \
   --seeds practice
 ```
 
+## Unseen wording (safety)
+
+```bash
+python3 harness/unseen_wording.py --data /path/to/screening/dev
+```
+
+Paraphrases free text without changing facts. Asserts **0** SAME/REVIEW → DIFFERENT flips. Sidecar true-facts JSON is written outside the engine data folder.
+
 ## Tests
 
 ```bash
