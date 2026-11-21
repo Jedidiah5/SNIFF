@@ -621,6 +621,84 @@ def younger_than_16(cd, report):
 
 
 # ---------------------------------------------------------------------------
+# Policy trace (exact POLICY.md sentences — one source of truth with the decision)
+# ---------------------------------------------------------------------------
+POLICY_RULES = {
+    "TEMPORAL_IMPOSSIBILITY": {
+        "principle": "6",
+        "rule": ("the customer was younger than 16 at the earliest dated report, or a company was "
+                 "incorporated after it; or the profile gives a date of death before the customer was screened."),
+    },
+    "DECEASED": {
+        "principle": "6",
+        "rule": ("the customer was younger than 16 at the earliest dated report, or a company was "
+                 "incorporated after it; or the profile gives a date of death before the customer was screened."),
+    },
+    "DOB_MISMATCH": {
+        "principle": "6",
+        "rule": ("every birth date the hit gives is contradicted: the customer's birth year is more than "
+                 "1 year outside it, or both give a month in the same year and the months (or days) differ. "
+                 "One agreeing date is enough to prevent this."),
+    },
+    "LOCATION_MISMATCH": {
+        "principle": "6",
+        "rule": ("every country tied to the customer (residence and nationality on all their records, the "
+                 "approved identity document, and places the notes say they lived) differs from every country "
+                 "tied to the hit. Codes and nationalities are countries; territories count as their own country. "
+                 "A country difference does not clear a hit whose name and date of birth agree: that hit is `REVIEW`."),
+    },
+    "NAME_MISMATCH_VERIFIED": {
+        "principle": "6",
+        "rule": ("the customer's verified legal name agrees with none of the hit's names or aliases "
+                 "(principle 8), even if the name on their record does."),
+    },
+    "ENTITY_TYPE_MISMATCH": {
+        "principle": "6",
+        "rule": "one is a person and the other a company.",
+    },
+    "NAME_DOB_LOCATION_MATCH": {
+        "principle": "7",
+        "rule": ("Confirm a person when name and date of birth agree and nothing contradicts them; "
+                 "a company when name and country agree and nothing contradicts them. Otherwise, `REVIEW`."),
+    },
+    "NAME_DOB_MATCH": {
+        "principle": "7",
+        "rule": ("Confirm a person when name and date of birth agree and nothing contradicts them; "
+                 "a company when name and country agree and nothing contradicts them. Otherwise, `REVIEW`."),
+    },
+    "NAME_LOCATION_MATCH": {
+        "principle": "7",
+        "rule": ("Confirm a person when name and date of birth agree and nothing contradicts them; "
+                 "a company when name and country agree and nothing contradicts them. Otherwise, `REVIEW`."),
+    },
+    "INSUFFICIENT_DATA": {
+        "principle": "7",
+        "rule": ("Confirm a person when name and date of birth agree and nothing contradicts them; "
+                 "a company when name and country agree and nothing contradicts them. Otherwise, `REVIEW`."),
+    },
+    "AMBIGUOUS_CUSTOMER_RECORD": {
+        "principle": "3",
+        "rule": ("If more than one person fits an alert, decide the hit for each; if they all lead to the "
+                 "same decision, give it, otherwise the decision is `REVIEW` with `AMBIGUOUS_CUSTOMER_RECORD`. "
+                 "Either way `customer_record_id` is `AMBIGUOUS`."),
+    },
+}
+
+
+def make_trace(reason_code, facts, resolution, fragile_guard=False):
+    meta = POLICY_RULES.get(reason_code, {"principle": "?", "rule": ""})
+    if isinstance(facts, str):
+        facts = [facts] if facts else []
+    return {
+        "principle": meta["principle"],
+        "rule": meta["rule"],
+        "facts": list(facts),
+        "fragile_guard": bool(fragile_guard),
+        "resolution": list(resolution or []),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Decision for one hit and one person
 # ---------------------------------------------------------------------------
 def decide_person(ix, alert, h, cf):
@@ -709,19 +787,17 @@ def decide_person(ix, alert, h, cf):
         # Unsure free-text parses may hint at a contradiction but must not clear alone.
         all_fragile = all(c[3] for c in contra)
         unusual = bool(cf.get("note_unusual"))
-        if all_fragile and unusual:
-            evid = []
-            for c in contra[:2]:
-                evid.extend(c[2])
-            reason = ("A possible contradiction rests only on free-text parsing that is not reliable enough "
-                      "to clear the hit, so a person must review it. " + " ".join(c[1] for c in contra[:2]))
-            return "REVIEW", "INSUFFICIENT_DATA", reason, evid
-        code, sent, ev, _frag = contra[0]
-        reason = " ".join(c[1] for c in contra[:2])
+        facts = [c[1] for c in contra[:2]]
         evid = []
         for c in contra[:2]:
             evid.extend(c[2])
-        return "DIFFERENT_ENTITY", code, reason, evid
+        if all_fragile and unusual:
+            reason = ("A possible contradiction rests only on free-text parsing that is not reliable enough "
+                      "to clear the hit, so a person must review it. " + " ".join(facts))
+            return "REVIEW", "INSUFFICIENT_DATA", reason, evid, True, facts
+        code = contra[0][0]
+        reason = " ".join(facts)
+        return "DIFFERENT_ENTITY", code, reason, evid, False, facts
 
     agree_bits = []
     evid = []
@@ -754,19 +830,20 @@ def decide_person(ix, alert, h, cf):
     if fragile_confirm:
         reason = ("Agreement rests only on free-text parsing that is not reliable enough to confirm "
                   "the hit, so a person must review it. " + " ".join(agree_bits))
-        return "REVIEW", "INSUFFICIENT_DATA", reason, evid
+        return "REVIEW", "INSUFFICIENT_DATA", reason, evid, True, list(agree_bits)
 
     if cf["company"] and h_company:
         if name_agree and loc_agree:
-            return "SAME_ENTITY", "NAME_LOCATION_MATCH", " ".join(agree_bits), evid
+            return "SAME_ENTITY", "NAME_LOCATION_MATCH", " ".join(agree_bits), evid, False, list(agree_bits)
     elif name_agree and dob_agree:
         # POLICY: "A country difference does not clear a hit whose name and date of birth agree: that hit is REVIEW."
         if loc_contra:
             tail = ("The name and date of birth agree but the countries differ, so the hit can be neither "
                     "cleared nor confirmed.")
-            return "REVIEW", "INSUFFICIENT_DATA", " ".join(agree_bits + [tail]), evid
+            facts = list(agree_bits) + [tail]
+            return "REVIEW", "INSUFFICIENT_DATA", " ".join(facts), evid, False, facts
         code = "NAME_DOB_LOCATION_MATCH" if loc_agree else "NAME_DOB_MATCH"
-        return "SAME_ENTITY", code, " ".join(agree_bits), evid
+        return "SAME_ENTITY", code, " ".join(agree_bits), evid, False, list(agree_bits)
 
     tail = ("Nothing in the customer's records contradicts the hit, and the evidence does not show enough "
             "agreement to confirm it, so the hit can be neither cleared nor confirmed.")
@@ -776,23 +853,27 @@ def decide_person(ix, alert, h, cf):
     if loc_contra and name_agree and dob_agree:
         tail = ("The name and date of birth agree but the countries differ, so the hit can be neither cleared "
                 "nor confirmed.")
-    return "REVIEW", "INSUFFICIENT_DATA", " ".join(agree_bits + [tail]), evid
+    facts = list(agree_bits) + [tail]
+    return "REVIEW", "INSUFFICIENT_DATA", " ".join(facts), evid, False, facts
 
 
 def decide_hit(ix, alert, h):
     persons, path = resolve(ix, alert)
     if not persons:
+        reason = ("No customer record in the system of record fits the screened details, so the hit "
+                  "can be neither cleared nor confirmed.")
         return {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA", "customer_record_id": None,
-                "reason": "No customer record in the system of record fits the screened details, so the hit "
-                          "can be neither cleared nor confirmed.", "evidence": [], "path": path}
+                "reason": reason, "evidence": [], "path": path,
+                "trace": make_trace("INSUFFICIENT_DATA", [reason], path)}
     results = []
     for p in persons:
         cf = customer_facts(ix, p, alert)
         results.append((p, decide_person(ix, alert, h, cf)))
     if len(results) == 1:
-        p, (dec, code, reason, ev) = results[0]
+        p, (dec, code, reason, ev, fragile, facts) = results[0]
         return {"decision": dec, "reason_code": code, "customer_record_id": p[0], "reason": reason,
-                "evidence": _clean(ev), "path": path}
+                "evidence": _clean(ev), "path": path,
+                "trace": make_trace(code, facts, path, fragile_guard=fragile)}
     decs = {r[1][0] for r in results}
     allev = []
     for p, r in results:
@@ -800,15 +881,17 @@ def decide_hit(ix, alert, h):
         allev.extend(r[3])
     recs = ", ".join("/".join(p) for p, _ in results)
     if len(decs) == 1:
-        p, (dec, code, reason, ev) = results[0]
+        p, (dec, code, reason, ev, fragile, facts) = results[0]
+        reason = (f"{len(results)} different people fit the alert ({recs}) and each leads to the same "
+                  f"decision. " + reason)
         return {"decision": dec, "reason_code": code, "customer_record_id": "AMBIGUOUS",
-                "reason": f"{len(results)} different people fit the alert ({recs}) and each leads to the same "
-                          f"decision. " + reason,
-                "evidence": _clean(allev), "path": path}
+                "reason": reason, "evidence": _clean(allev), "path": path,
+                "trace": make_trace(code, facts, path, fragile_guard=fragile)}
+    reason = (f"{len(results)} different people fit the alert ({recs}) and they lead to different "
+              f"decisions ({', '.join(sorted(decs))}), so a person must review it.")
     return {"decision": "REVIEW", "reason_code": "AMBIGUOUS_CUSTOMER_RECORD", "customer_record_id": "AMBIGUOUS",
-            "reason": f"{len(results)} different people fit the alert ({recs}) and they lead to different "
-                      f"decisions ({', '.join(sorted(decs))}), so a person must review it.",
-            "evidence": _clean(allev), "path": path}
+            "reason": reason, "evidence": _clean(allev), "path": path,
+            "trace": make_trace("AMBIGUOUS_CUSTOMER_RECORD", [reason], path)}
 
 
 def _clean(ev):
