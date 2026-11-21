@@ -130,10 +130,10 @@ TEMPLATE = r"""<!DOCTYPE html>
 <title>__TITLE__</title>
 <style>
 :root{
-  --bg:#FFFFFF; --paper:#FFF8F2; --tint:#FFEBDD; --line:#F2E3D7;
-  --orange:#FF6A13; --orange2:#FF8A3D; --deep:#D94E00; --ink:#1B1410; --muted:#7A6A60;
+  --bg:#FFFFFF; --paper:#F6F6F6; --tint:#EEEEEE; --line:#E4E4E4;
+  --accent:#111111; --accent2:#2A2A2A; --deep:#000000; --ink:#111111; --muted:#6B6B6B;
   --clear:#13A45C; --match:#E5484D; --review:#F2A30F;
-  --shadow:0 1px 2px rgba(90,40,0,.06),0 12px 32px -12px rgba(217,78,0,.25);
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 12px 32px -12px rgba(0,0,0,.18);
   --spring:cubic-bezier(.2,.9,.25,1.15);
 }
 *{box-sizing:border-box}
@@ -142,15 +142,13 @@ html,body{margin:0;background:var(--bg);color:var(--ink);
 .wrap{max-width:1280px;margin:0 auto;padding:0 28px}
 /* ---------- hero ---------- */
 .hero{position:relative;overflow:hidden;background:
-  radial-gradient(900px 420px at 85% -10%,#FFD9BF 0%,rgba(255,217,191,0) 60%),
-  radial-gradient(700px 380px at -10% 110%,#FFE9DA 0%,rgba(255,233,218,0) 60%),var(--paper);
+  radial-gradient(900px 420px at 85% -10%,#E8E8E8 0%,rgba(232,232,232,0) 60%),
+  radial-gradient(700px 380px at -10% 110%,#F0F0F0 0%,rgba(240,240,240,0) 60%),var(--paper);
   border-bottom:1px solid var(--line)}
 .hero .wrap{display:grid;grid-template-columns:1.1fr .9fr;gap:32px;align-items:center;padding-top:44px;padding-bottom:40px}
-.brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:.08em;color:var(--deep)}
-.logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--orange2),var(--deep));
-  display:grid;place-items:center;color:#fff;font-weight:900;box-shadow:var(--shadow);transform:rotate(-6deg)}
+.brand{display:flex;align-items:center;font-weight:800;letter-spacing:.08em;color:var(--deep);font-size:18px}
 h1{font-size:46px;line-height:1.05;margin:18px 0 12px;letter-spacing:-.02em}
-h1 em{font-style:normal;background:linear-gradient(90deg,var(--orange),var(--deep));-webkit-background-clip:text;background-clip:text;color:transparent}
+h1 em{font-style:normal;color:var(--deep)}
 .sub{color:var(--muted);font-size:17px;max-width:560px}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:13px;color:var(--muted);margin-top:18px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--clear);box-shadow:0 0 0 4px rgba(19,164,92,.15)}
@@ -164,7 +162,7 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--orange),var(--dee
 .card3 .row{height:8px;border-radius:6px;background:var(--tint);margin-top:12px}
 .c1{transform:translate3d(-10px,0,-60px);animation-delay:-1s}
 .c2{transform:translate3d(45px,84px,0);animation-delay:-2s}
-.c3{transform:translate3d(100px,168px,60px);background:linear-gradient(140deg,#fff 0%,#FFF1E6 100%);border-color:#FFC9A6;animation-delay:-3s}
+.c3{transform:translate3d(100px,168px,60px);background:linear-gradient(140deg,#fff 0%,#F3F3F3 100%);border-color:#CCCCCC;animation-delay:-3s}
 @keyframes bob{0%,100%{translate:0 0}50%{translate:0 -10px}}
 .badge{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:12px;padding:5px 10px;border-radius:999px;letter-spacing:.02em}
 .b-DIFFERENT_ENTITY{background:rgba(19,164,92,.12);color:var(--clear)}
@@ -175,7 +173,7 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--orange),var(--dee
 .stat{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:var(--shadow);transform-style:preserve-3d;transition:transform .2s ease-out}
 .stat .n{font-size:30px;font-weight:800;letter-spacing:-.02em}
 .stat .l{color:var(--muted);font-size:13px}
-.stat.hot .n{color:var(--orange)}
+.stat.hot .n{color:var(--accent)}
 /* explorer */
 .section-title{display:flex;align-items:end;justify-content:space-between;margin:40px 0 14px}
 .section-title h2{margin:0;font-size:24px;letter-spacing:-.01em}
@@ -184,17 +182,17 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--orange),var(--dee
 .side{position:sticky;top:16px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
 .search{padding:14px;border-bottom:1px solid var(--line);background:var(--paper)}
 .search input{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--line);font:inherit;outline:none;background:#fff}
-.search input:focus{border-color:var(--orange2);box-shadow:0 0 0 4px rgba(255,106,19,.12)}
+.search input:focus{border-color:var(--accent);box-shadow:0 0 0 4px rgba(0,0,0,.08)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
 .chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 10px;font-size:12px;cursor:pointer;color:var(--muted)}
-.chip.on{background:var(--orange);border-color:var(--orange);color:#fff}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .list{max-height:640px;overflow:auto}
-.li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid #FBF1EA;cursor:pointer;transition:background .15s}
+.li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid #F0F0F0;cursor:pointer;transition:background .15s}
 .li:hover{background:var(--paper)}
 .li.sel{background:var(--tint)}
 .li .id{font-weight:700;font-size:13px}
 .li .nm{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
-.star{color:var(--orange);font-size:11px;margin-left:4px}
+.star{color:var(--accent);font-size:11px;margin-left:4px}
 .dotd{width:10px;height:10px;border-radius:50%;flex:none}
 .d-DIFFERENT_ENTITY{background:var(--clear)} .d-SAME_ENTITY{background:var(--match)} .d-REVIEW{background:var(--review)}
 /* detail */
@@ -204,7 +202,7 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--orange),var(--dee
 .who .k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .who .v{font-size:20px;font-weight:800;margin-top:2px}
 .who .m{color:var(--muted);font-size:13px}
-.vsx{display:grid;place-items:center;font-weight:900;color:#fff;width:52px;border-radius:16px;background:linear-gradient(160deg,var(--orange2),var(--deep));box-shadow:var(--shadow)}
+.vsx{display:grid;place-items:center;font-weight:900;color:#fff;width:52px;border-radius:16px;background:linear-gradient(160deg,var(--accent2),var(--deep));box-shadow:var(--shadow)}
 .pipe{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;perspective:1200px}
 .step{position:relative;background:#fff;border:1px solid var(--line);border-radius:20px;padding:16px;box-shadow:var(--shadow);
   transform-style:preserve-3d;opacity:0;transform:translateY(26px) rotateX(18deg) scale(.96);min-height:220px}
@@ -212,14 +210,14 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--orange),var(--dee
 @keyframes springIn{to{opacity:1;transform:translateY(0) rotateX(0) scale(1)}}
 .step .num{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-weight:800;font-size:13px;background:var(--tint);color:var(--deep)}
 .step h3{margin:10px 0 8px;font-size:15px}
-.step:not(:last-child)::after{content:"";position:absolute;right:-12px;top:50%;width:10px;height:10px;border-top:2px solid var(--orange2);border-right:2px solid var(--orange2);transform:translateY(-50%) rotate(45deg);z-index:3}
-.step.final{background:linear-gradient(150deg,#fff 0%,#FFF2E8 100%);border-color:#FFC9A6}
+.step:not(:last-child)::after{content:"";position:absolute;right:-12px;top:50%;width:10px;height:10px;border-top:2px solid var(--accent2);border-right:2px solid var(--accent2);transform:translateY(-50%) rotate(45deg);z-index:3}
+.step.final{background:linear-gradient(150deg,#fff 0%,#F3F3F3 100%);border-color:#CCCCCC}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
 .path{margin:0;padding-left:16px;color:var(--ink);font-size:12.5px}
 .path li{margin:4px 0}
 .ev{display:flex;flex-wrap:wrap;gap:6px}
 .ev span{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:3px 7px}
-.quote{border-left:3px solid var(--orange);padding:4px 0 4px 10px;color:#3a2a20;font-size:13px;font-style:italic}
+.quote{border-left:3px solid var(--accent);padding:4px 0 4px 10px;color:#2a2a2a;font-size:13px;font-style:italic}
 .code{display:inline-block;margin-top:8px;font-weight:700;color:var(--deep)}
 .verdict{font-size:22px;font-weight:900;letter-spacing:-.01em;margin:6px 0}
 .v-DIFFERENT_ENTITY{color:var(--clear)} .v-SAME_ENTITY{color:var(--match)} .v-REVIEW{color:#C48100}
@@ -230,14 +228,14 @@ h1 em{font-style:normal;background:linear-gradient(90deg,var(--orange),var(--dee
 /* harness */
 .harness{margin:44px 0 30px;display:grid;grid-template-columns:.85fr 1.15fr;gap:20px}
 .hcard{background:#fff;border:1px solid var(--line);border-radius:22px;padding:22px;box-shadow:var(--shadow)}
-.big{font-size:84px;font-weight:900;line-height:1;letter-spacing:-.04em;background:linear-gradient(180deg,var(--orange),var(--deep));-webkit-background-clip:text;background-clip:text;color:transparent}
+.big{font-size:84px;font-weight:900;line-height:1;letter-spacing:-.04em;color:var(--deep)}
 .bar{display:flex;height:22px;border-radius:999px;overflow:hidden;background:var(--paper);margin:16px 0 8px}
 .bar div{width:0;transition:width 1.2s var(--spring)}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--muted);font-weight:600;padding:8px;border-bottom:1px solid var(--line)}
-td{padding:7px 8px;border-bottom:1px solid #FBF1EA}
+td{padding:7px 8px;border-bottom:1px solid #F0F0F0}
 .ok{color:var(--clear);font-weight:700} .bad{color:var(--match);font-weight:700}
 .tbl{max-height:360px;overflow:auto}
 footer{border-top:1px solid var(--line);background:var(--paper);color:var(--muted);font-size:13px;padding:22px 0;margin-top:20px}
@@ -251,7 +249,7 @@ footer{border-top:1px solid var(--line);background:var(--paper);color:var(--mute
 <header class="hero">
   <div class="wrap">
     <div>
-      <div class="brand"><div class="logo">S</div>SNIFF</div>
+      <div class="brand">SNIFF</div>
       <h1>Is this watchlist hit <em>really</em> our customer?</h1>
       <div class="sub">Sanctions Name &amp; Identity Fact Finder. SNIFF resolves the customer across six bank systems, gathers the listed person's facts, and follows the screening SOP to the letter: clear only on a contradiction, confirm only on agreement, otherwise send it to a person.</div>
       <div class="pill"><span class="dot"></span>Deterministic: no model, no randomness, same answer every run</div>
@@ -260,7 +258,7 @@ footer{border-top:1px solid var(--line);background:var(--paper);color:var(--mute
       <div class="stack" id="stack">
         <div class="card3 c1"><div class="k">Customer (verified ID)</div><div class="v" id="h-cust">Resolving…</div><div class="row" style="width:80%"></div><div class="row" style="width:55%"></div></div>
         <div class="card3 c2"><div class="k">Watchlist hit</div><div class="v" id="h-hit">Gathering facts…</div><div class="row" style="width:70%"></div><div class="row" style="width:40%"></div></div>
-        <div class="card3 c3"><div class="k">SOP verdict</div><div class="v" id="h-verdict">…</div><div class="row" style="width:62%;background:#FFD5B8"></div><div class="mono" id="h-code" style="margin-top:12px;color:var(--deep)"></div></div>
+        <div class="card3 c3"><div class="k">SOP verdict</div><div class="v" id="h-verdict">…</div><div class="row" style="width:62%;background:#DDDDDD"></div><div class="mono" id="h-code" style="margin-top:12px;color:var(--deep)"></div></div>
       </div>
     </div>
   </div>
@@ -382,8 +380,8 @@ if (D.harness) {
       <div class="hcard tilt"><div class="k" style="color:var(--muted);font-size:12px;letter-spacing:.12em;text-transform:uppercase">Unsafe clears</div>
         <div class="big" id="bigzero">${H.unsafe}</div>
         <div style="font-weight:700;margin-top:6px">${H.cases} mutations from ${H.seeds} true matches</div>
-        <div class="bar"><div id="b1" style="background:var(--orange)"></div><div id="b2" style="background:var(--review)"></div><div id="b3" style="background:var(--clear)"></div></div>
-        <div class="legend"><span><i style="background:var(--orange)"></i>${H.same} still caught as a match</span><span><i style="background:var(--review)"></i>${H.review} moved to review</span><span><i style="background:var(--clear)"></i>${H.different} became cleared</span></div>
+        <div class="bar"><div id="b1" style="background:var(--accent)"></div><div id="b2" style="background:var(--review)"></div><div id="b3" style="background:var(--clear)"></div></div>
+        <div class="legend"><span><i style="background:var(--accent)"></i>${H.same} still caught as a match</span><span><i style="background:var(--review)"></i>${H.review} moved to review</span><span><i style="background:var(--clear)"></i>${H.different} became cleared</span></div>
         <p style="color:var(--muted);font-size:13px;margin-top:12px">Mutations include name variants, hidden dates of birth, look-alike customers, rejected ID checks, duplicate records and cut account links.</p>
       </div>
       <div class="hcard"><div class="tbl"><table><thead><tr><th>Hit</th><th>Trick</th><th>Before</th><th>After</th><th>Safety</th></tr></thead><tbody>${rows}</tbody></table></div></div>
