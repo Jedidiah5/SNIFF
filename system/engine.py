@@ -200,12 +200,17 @@ def countries_in_text(text):
 
 
 def as_list(v):
+    """Normalise a field that may be a JSON list or a ';'-separated string (browse workbook)."""
     if v is None:
         return []
     if isinstance(v, list):
         out = []
         for x in v:
-            out.extend(as_list(x))
+            if isinstance(x, dict):
+                # keep structured values as one item (caller decides how to read them)
+                out.append(x)
+            else:
+                out.extend(as_list(x))
         return out
     if isinstance(v, dict):
         return [v]
@@ -213,6 +218,19 @@ def as_list(v):
     if not s:
         return []
     return [p.strip() for p in s.split(";") if p.strip()]
+
+
+def normalize_alert(a):
+    """Official JSONL nests screened fields under customer{}; browse/flat form keeps them on top."""
+    out = dict(a)
+    cust = out.get("customer")
+    if isinstance(cust, dict):
+        mapping = (("name", "customer_name"), ("entity_type", "entity_type"),
+                   ("dob", "dob"), ("country", "country"), ("city", "city"))
+        for src, dst in mapping:
+            if out.get(dst) in (None, "") and cust.get(src) not in (None, ""):
+                out[dst] = cust[src]
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +452,7 @@ def load_data(folder):
                 data[key] = _read_jsonl(path)
                 used.add(fn)
                 break
+    data["alerts"] = [normalize_alert(a) for a in data["alerts"]]
     groups = [[w.strip() for w in line.split(",") if w.strip()] for line in DEFAULT_VARIANT_GROUPS.splitlines()]
     legal = list(DEFAULT_LEGAL_FORMS)
     for fn, path in files.items():

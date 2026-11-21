@@ -325,16 +325,22 @@ def hit_countries(h):
     out = []
     for f in ("countries", "nationality", "citizenship"):
         for v in as_list(h.get(f)):
+            if not isinstance(v, str):
+                continue
             last = re.sub(r"\[.*?\]", "", v).split(",")[-1]
             c = norm_country(last)
             if c and c not in out:
                 out.append(c)
     for v in as_list(h.get("addresses")):
+        if not isinstance(v, str):
+            continue
         last = re.sub(r"\[.*?\]", "", v).split(",")[-1]
         c = norm_country(last)
         if c and c not in out:
             out.append(c)
     for v in as_list(h.get("place_of_birth")):
+        if not isinstance(v, str):
+            continue
         c = norm_country(v.split(",")[-1])
         if c and c not in out:
             out.append(c)
@@ -342,7 +348,7 @@ def hit_countries(h):
 
 
 def hit_names(h):
-    return [h.get("name")] + [a for a in as_list(h.get("aliases"))]
+    return [h.get("name")] + [a for a in as_list(h.get("aliases")) if isinstance(a, str)]
 
 
 def listing_phrase(h):

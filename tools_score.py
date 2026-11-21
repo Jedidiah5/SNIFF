@@ -1,14 +1,25 @@
 """Score output against practice labels: python3 tools_score.py <labels.jsonl> <output.jsonl> [-v]"""
 import json, sys
 from collections import Counter
-labels = {json.loads(l)["hit_id"]: json.loads(l) for l in open(sys.argv[1]) if l.strip()}
-out = {json.loads(l)["hit_id"]: json.loads(l) for l in open(sys.argv[2]) if l.strip()}
+
+
+def field_list(v):
+    """Practice labels use a JSON list; the browse workbook used ';'-separated strings."""
+    if v is None or v == "":
+        return []
+    if isinstance(v, list):
+        return [str(x).strip() for x in v if str(x).strip()]
+    return [p.strip() for p in str(v).split(";") if p.strip()]
+
+
+labels = {json.loads(l)["hit_id"]: json.loads(l) for l in open(sys.argv[1], encoding="utf-8") if l.strip()}
+out = {json.loads(l)["hit_id"]: json.loads(l) for l in open(sys.argv[2], encoding="utf-8") if l.strip()}
 v = "-v" in sys.argv
 conf = Counter(); ok_dec = ok_code = ok_cust = 0; wrong = []
 for hid, lab in labels.items():
     o = out.get(hid, {"decision": "MISSING", "reason_code": "", "customer_record_id": None, "evidence": []})
-    codes = [c.strip() for c in str(lab["reason_codes"]).split(";")]
-    custs = [c.strip() for c in str(lab["customer_record_ids"] or "").split(";")]
+    codes = field_list(lab.get("reason_codes"))
+    custs = field_list(lab.get("customer_record_ids"))
     conf[(lab["decision"], o["decision"])] += 1
     d = o["decision"] == lab["decision"]; ok_dec += d
     ok_code += d and o["reason_code"] in codes

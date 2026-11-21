@@ -1,8 +1,15 @@
 # Never commit the hackathon data or secrets
 dev/
 data/
+screening/
 *.xlsx
+*.zip
 .env
 *.key
 __pycache__/
 *.pyc
+
+# Internal team plans — keep on disk, do not publish
+MEGAPLAN.md
+PLAN_A_ENGINE.md
+PLAN_B_PROOF.md
