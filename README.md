@@ -31,3 +31,4 @@ system/run <data folder> <output file>
 - [`tests/`](tests/) — 17 SOP rule tests
 - [`harness/`](harness/) — test-to-fail mutation harness
 - [`baseline/`](baseline/) — name-only foil baseline
+- `console/trace.py`: generates a static policy-trace page from `--debug` output (open the HTML locally; it is gitignored because it contains dev data).

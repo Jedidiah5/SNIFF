@@ -22,3 +22,6 @@ output/_spot.json
 # Harness reports (may contain data-derived detail)
 harness/*.json
 harness/*.html
+
+# Console generated page contains dev data — never commit
+console/*.html
