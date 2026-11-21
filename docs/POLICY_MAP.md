@@ -25,7 +25,7 @@ Do not edit the reason-code table by hand — regenerate it.
 |---|---|
 | **2. Know who the customer is** | `resolve()` / `fits_screened()` follow account_ref, login_handle, email, else name search. |
 | **3. One person, one picture** | `group_persons()` merges by phone+full DOB or shared approved document number; multi-person disagreement → `AMBIGUOUS_CUSTOMER_RECORD`. |
-| **4. Verified beats declared** | `customer_facts()` takes the latest **approved** KYC check or KYC note; rejected/expired checks are ignored. |
+| **4. Verified beats declared** | `customer_facts()` takes the most recent **approved** identity check across both sources (KYC provider checks and KYC-channel notes), compared by date; rejected/expired checks are ignored. |
 | **5. Gather the hit's facts** | `hit_dobs()` / `hit_countries()` / `earliest_report()`; search snippets only with listing phrase + shared country; **companies: `dobs` only**. |
 | **8. Names** | `engine.Names` (variants, together/apart, edit distance, legal forms, placeholders). |
 | **9. Cite what you used** | Output `evidence` and `customer_record_id`; `--debug` adds `path` and `trace`. |
