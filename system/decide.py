@@ -529,6 +529,11 @@ def hit_dobs(ix, h):
         d = parse_date(v)
         if d:
             cands.append({"years": [d[0]], "month": d[1], "day": d[2], "text": fmt_date(d)})
+    # POLICY principle 5: "For companies, only the dobs field is an incorporation date."
+    if (h.get("entity_type") or "").lower().startswith("comp"):
+        if cands:
+            return cands, "listed date of birth", [], False
+        return [], None, [], False
     if cands:
         return cands, "listed date of birth", [], False
     notes = (h.get("profile_notes") or "").strip()
@@ -755,6 +760,11 @@ def decide_person(ix, alert, h, cf):
         if name_agree and loc_agree:
             return "SAME_ENTITY", "NAME_LOCATION_MATCH", " ".join(agree_bits), evid
     elif name_agree and dob_agree:
+        # POLICY: "A country difference does not clear a hit whose name and date of birth agree: that hit is REVIEW."
+        if loc_contra:
+            tail = ("The name and date of birth agree but the countries differ, so the hit can be neither "
+                    "cleared nor confirmed.")
+            return "REVIEW", "INSUFFICIENT_DATA", " ".join(agree_bits + [tail]), evid
         code = "NAME_DOB_LOCATION_MATCH" if loc_agree else "NAME_DOB_MATCH"
         return "SAME_ENTITY", code, " ".join(agree_bits), evid
 
