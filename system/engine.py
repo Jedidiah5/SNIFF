@@ -428,11 +428,21 @@ def _read_jsonl(path):
     return rows
 
 
+# Decision-facing inputs only. Practice / ground-truth labels must never be loaded here —
+# evaluation tools (tools_score.py, harness seed selection, validate.py) read them separately.
 FILE_KEYS = {
     "alerts": ["alert"], "hits": ["hit"], "customers": ["customer"], "accounts": ["account"],
     "onboarding": ["onboard"], "kyc": ["kyc", "check", "identity"], "notes": ["note"],
-    "search": ["search"], "labels": ["practice", "label"],
+    "search": ["search"],
 }
+
+# Filenames that are evaluation-only. Never match these into FILE_KEYS buckets.
+_EVAL_ONLY_NAME_PARTS = ("practice", "label", "labels", "answer", "ground_truth", "ground-truth")
+
+
+def _is_eval_only_filename(fn):
+    low = fn.lower()
+    return any(part in low for part in _EVAL_ONLY_NAME_PARTS)
 
 
 def load_data(folder):
@@ -442,10 +452,10 @@ def load_data(folder):
             files[fn] = os.path.join(root, fn)
     data = {k: [] for k in FILE_KEYS}
     used = set()
-    order = ["labels", "onboarding", "kyc", "search", "alerts", "hits", "customers", "accounts", "notes"]
+    order = ["onboarding", "kyc", "search", "alerts", "hits", "customers", "accounts", "notes"]
     for key in order:
         for fn, path in sorted(files.items()):
-            if not fn.endswith(".jsonl") or fn in used:
+            if not fn.endswith(".jsonl") or fn in used or _is_eval_only_filename(fn):
                 continue
             low = fn.lower()
             if any(k in low for k in FILE_KEYS[key]):

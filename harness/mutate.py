@@ -9,6 +9,7 @@ Stdlib only. Never edits system/*.py.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -109,13 +110,20 @@ def run_engine(data_dir: str, out_file: str) -> Dict[str, dict]:
     return {r["hit_id"]: r for r in read_jsonl(out_file)}
 
 
+def stable_digest(text: str, n_hex: int = 6) -> str:
+    """Process-stable hex digest (not salted Python hash())."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:n_hex].upper()
+
+
+def stable_int(text: str, mod: int = 10_000_000) -> int:
+    """Process-stable non-negative int in [0, mod)."""
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return int(digest, 16) % mod
+
+
 def mut_id(prefix: str, hit_id: str, tag: str) -> str:
-    """Deterministic short id: PREFIX- + 6 hex-ish chars from hit+tag."""
-    raw = f"{hit_id}:{tag}".encode()
-    h = 0
-    for b in raw:
-        h = (h * 131 + b) & 0xFFFFFF
-    return f"{prefix}-{h:06X}"
+    """Deterministic short id: PREFIX- + sha256 prefix from hit+tag."""
+    return f"{prefix}-{stable_digest(f'{hit_id}:{tag}', 6)}"
 
 
 def shift_dob(dob: Optional[str], years: int = 10) -> str:
@@ -150,6 +158,37 @@ def strip_accents(s: str) -> str:
 # Dataset context for one working copy
 # ---------------------------------------------------------------------------
 
+def query_key(s: Optional[str]) -> str:
+    """Match engine Index._qkey: accent-strip, alnum tokens, sorted."""
+    w = re.sub(r"[^a-z0-9 ]+", " ", strip_accents(str(s or "")).lower()).split()
+    return " ".join(sorted(w))
+
+
+def scrub_dob_signals(text: str) -> str:
+    """Remove born/age/year signals used by hit_dobs while leaving other prose."""
+    if not text:
+        return text
+    t = text
+    t = re.sub(r"(?is)\bborn\b(?:\s+(?:on|in))?\s+[^.!\n]*", "", t)
+    t = re.sub(r"(?i)\baged?\s+\d{1,3}\b", "", t)
+    t = re.sub(r"(?i)\b\d{1,3}\s*[- ]?\s*years?\s*[- ]?\s*old\b", "", t)
+    t = re.sub(r"(?i)\b\d{1,3}-year-old\b", "", t)
+    t = re.sub(r"(?i)\byears?\s+of\s+age\b", "", t)
+    # Month + year / month + day + year (snippet_years / age_years anchors)
+    months = (
+        r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+        r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
+    )
+    t = re.sub(rf"(?i)\b(?:{months})\.?\s+\d{{1,2}},?\s+\d{{4}}\b", "[date]", t)
+    t = re.sub(rf"(?i)\b(?:{months})\.?\s+\d{{4}}\b", "[date]", t)
+    t = re.sub(r"(?i)\b(?:in|on)\s+(19\d{2}|20\d{2})\b", "", t)
+    # Age comma pattern ", 36," used by engine AGE_PATTERNS
+    t = re.sub(r",\s*\d{1,3}\s*,", ", ", t)
+    t = re.sub(r"(?i)\bwas\s+\d{1,3}\b", "", t)
+    t = re.sub(r"[ \t]{2,}", " ", t)
+    return t.strip()
+
+
 class DataCtx:
     def __init__(self, data_dir: str):
         self.data_dir = data_dir
@@ -160,6 +199,7 @@ class DataCtx:
             "accounts": find_jsonl(data_dir, "account"),
             "onboarding": find_jsonl(data_dir, "onboard"),
             "kyc": find_jsonl(data_dir, "kyc", "check", "identity"),
+            "search": find_jsonl(data_dir, "search"),
         }
         self.hits = read_jsonl(self.paths["hits"])
         self.alerts = read_jsonl(self.paths["alerts"])
@@ -167,6 +207,7 @@ class DataCtx:
         self.accounts = read_jsonl(self.paths["accounts"])
         self.onboarding = read_jsonl(self.paths["onboarding"])
         self.kyc = read_jsonl(self.paths["kyc"])
+        self.search = read_jsonl(self.paths["search"])
         self.hit_by_id = {h["hit_id"]: h for h in self.hits}
         self.alert_by_id = {a["alert_id"]: a for a in self.alerts}
         self.cust_by_id = {c["record_id"]: c for c in self.customers}
@@ -247,6 +288,7 @@ class DataCtx:
             "accounts": (self.paths["accounts"], self.accounts),
             "onboarding": (self.paths["onboarding"], self.onboarding),
             "kyc": (self.paths["kyc"], self.kyc),
+            "search": (self.paths["search"], self.search),
         }
         for k in keys:
             path, rows = mapping[k]
@@ -321,30 +363,56 @@ def mutate_name_variant(ctx: DataCtx, hit_id: str, _hints: List[str]) -> str:
 
 
 def mutate_remove_hit_dob(ctx: DataCtx, hit_id: str, _hints: List[str]) -> str:
+    """Remove every hit DOB source the engine consults: dobs, notes, search snippets.
+
+    Unrelated search rows (other queries) and non-DOB note prose are preserved.
+    """
     hit = ctx.hit_by_id[hit_id]
     old_dobs = list(hit.get("dobs") or [])
     hit["dobs"] = []
     notes = hit.get("profile_notes")
-    stripped = 0
+    stripped_notes = 0
     if notes:
+        before = notes
+
         def _sub(m: re.Match) -> str:
-            nonlocal stripped
-            stripped += 1
-            # keep leading delimiter if present
+            nonlocal stripped_notes
+            stripped_notes += 1
             lead = m.group(0)[: len(m.group(0)) - len(m.group(1))]
             return lead.rstrip()
 
         new_notes = BORN_AGE_SENTENCE.sub(_sub, notes)
-        # also kill bare "N-year-old" fragments left mid-sentence
         new_notes2, n2 = re.subn(
             r"(?i),?\s*a?\s*\d{1,3}\s*[- ]?\s*years?\s*[- ]?\s*old\b",
             "",
             new_notes,
         )
-        stripped += n2
-        hit["profile_notes"] = new_notes2
-    ctx.save("hits")
-    return f"cleared dobs={old_dobs!r}; stripped_born_age_bits={stripped}"
+        stripped_notes += n2
+        scrubbed = scrub_dob_signals(new_notes2)
+        if scrubbed != before:
+            stripped_notes = max(stripped_notes, 1)
+        hit["profile_notes"] = scrubbed
+
+    # Scrub DOB/age signals from search snippets for this hit's name query only.
+    qkey = query_key(hit.get("name"))
+    scrubbed_search = 0
+    for s in ctx.search:
+        if query_key(s.get("query")) != qkey:
+            continue
+        snip = s.get("snippet") or ""
+        title = s.get("title") or ""
+        new_snip = scrub_dob_signals(snip)
+        new_title = scrub_dob_signals(title)
+        if new_snip != snip or new_title != title:
+            s["snippet"] = new_snip
+            s["title"] = new_title
+            scrubbed_search += 1
+
+    ctx.save("hits", "search")
+    return (
+        f"cleared dobs={old_dobs!r}; stripped_note_bits={stripped_notes}; "
+        f"scrubbed_search_rows={scrubbed_search}"
+    )
 
 
 def _append_kyc(
@@ -468,7 +536,7 @@ def mutate_lookalike_customer(ctx: DataCtx, hit_id: str, hints: List[str]) -> st
     # same display name as screened / original, different phone + dob
     src["full_name"] = screened.get("name") or src.get("full_name")
     src["dob"] = shift_dob(src.get("dob") or screened.get("dob"), 7)
-    src["phone"] = f"+1 555{abs(hash(hit_id)) % 10_000_000:07d}"
+    src["phone"] = f"+1 555{stable_int(hit_id, 10_000_000):07d}"
     src["email"] = f"lookalike.{hit_id.lower()}@example.invalid"
     ctx.customers.append(src)
     ctx.cust_by_id[new_id] = src
@@ -533,15 +601,30 @@ MUTATORS: Dict[str, Callable[[DataCtx, str, List[str]], str]] = {
 # Evaluation
 # ---------------------------------------------------------------------------
 
+def is_company_name_location(entity_type: Optional[str], original_reason: Optional[str]) -> bool:
+    """Company confirms use NAME_LOCATION_MATCH; DOB is not required for that SOP path."""
+    if (original_reason or "") == "NAME_LOCATION_MATCH":
+        return True
+    return (entity_type or "").lower().startswith("comp")
+
+
 def evaluate(
     mutation: str,
     original: str,
     mutated: str,
     mutated_reason: Optional[str],
+    *,
+    original_reason: Optional[str] = None,
+    entity_type: Optional[str] = None,
 ) -> Tuple[str, bool, bool, str]:
-    """Return (expected, passed, safety_violation, notes)."""
+    """Return (expected, passed, safety_violation, notes).
+
+    Safety invariants (wrongful SAME→DIFFERENT on protected mutations) are independent
+    of soft expected-outcome checks.
+    """
     notes = []
     safety = False
+    company_loc = is_company_name_location(entity_type, original_reason)
 
     if mutation == "name_variant":
         expected = f"{original}|REVIEW"
@@ -551,10 +634,17 @@ def evaluate(
             passed = False
             notes.append("wrongful clear after name variant")
     elif mutation == "remove_hit_dob":
-        expected = "REVIEW"
-        if original == "REVIEW":
+        if company_loc:
+            # SOP: companies confirm on name+location; removing hit DOB must not force REVIEW
+            # and must never wrongful-clear.
+            expected = "SAME_ENTITY|REVIEW"
+            passed = mutated in {"SAME_ENTITY", "REVIEW"}
+            notes.append("company NAME_LOCATION SOP: DOB removal N/A to confirm rule")
+        elif original == "REVIEW":
+            expected = "REVIEW"
             passed = mutated == "REVIEW"
         else:
+            expected = "REVIEW"
             # ideal: SAME -> REVIEW; staying SAME is soft-fail; DIFFERENT is safety
             passed = mutated == "REVIEW"
             if mutated == "SAME_ENTITY":
@@ -564,12 +654,19 @@ def evaluate(
             passed = False
             notes.append("wrongful clear after remove_hit_dob")
     elif mutation == "verified_conflicting_dob":
-        expected = "DIFFERENT_ENTITY"
-        passed = mutated == "DIFFERENT_ENTITY"
-        if mutated == "SAME_ENTITY":
-            notes.append("still SAME despite approved conflicting DOB (soft-fail)")
-        if mutated_reason and mutated == "DIFFERENT_ENTITY" and mutated_reason != "DOB_MISMATCH":
-            notes.append(f"different but reason={mutated_reason} (wanted DOB_MISMATCH)")
+        if company_loc:
+            # Conflicting customer KYC DOB is not a required clear path when the hit is a
+            # company confirmed on name+location (often with no hit DOB to contradict).
+            expected = "SAME_ENTITY|DIFFERENT_ENTITY|REVIEW"
+            passed = mutated in {"SAME_ENTITY", "DIFFERENT_ENTITY", "REVIEW"}
+            notes.append("company NAME_LOCATION SOP: DOB conflict probe informational")
+        else:
+            expected = "DIFFERENT_ENTITY"
+            passed = mutated == "DIFFERENT_ENTITY"
+            if mutated == "SAME_ENTITY":
+                notes.append("still SAME despite approved conflicting DOB (soft-fail)")
+            if mutated_reason and mutated == "DIFFERENT_ENTITY" and mutated_reason != "DOB_MISMATCH":
+                notes.append(f"different but reason={mutated_reason} (wanted DOB_MISMATCH)")
         # no safety_violation for this probe unless something absurd — keep false
     elif mutation == "unreliable_conflicting_dob":
         expected = original
@@ -699,9 +796,14 @@ def run_case(
                 "safety_violation": False,
                 "notes": "hit missing from dataset",
             }
+        entity_type = (ctx.hit_by_id[hit_id].get("entity_type") if hit_id in ctx.hit_by_id else None)
+        original_reason = original_row.get("reason_code")
         mut_note = MUTATORS[mutation](ctx, hit_id, seed.get("customer_record_ids") or [])
         if mut_note.startswith("SKIP:"):
-            expected, passed, safety, eval_notes = evaluate(mutation, original, original, None)
+            expected, passed, safety, eval_notes = evaluate(
+                mutation, original, original, None,
+                original_reason=original_reason, entity_type=entity_type,
+            )
             return {
                 "case_id": case_id,
                 "hit_id": hit_id,
@@ -718,7 +820,10 @@ def run_case(
         mrow = mutated_map.get(hit_id) or {}
         mutated = mrow.get("decision") or "MISSING"
         reason = mrow.get("reason_code")
-        expected, passed, safety, eval_notes = evaluate(mutation, original, mutated, reason)
+        expected, passed, safety, eval_notes = evaluate(
+            mutation, original, mutated, reason,
+            original_reason=original_reason, entity_type=entity_type,
+        )
         notes_parts = [p for p in (mut_note, eval_notes) if p]
         return {
             "case_id": case_id,

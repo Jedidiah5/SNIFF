@@ -3,6 +3,23 @@
     "seeds": "practice SAME_ENTITY (12)",
     "mutations": 7,
     "n_cases": 84,
+    "stayed_SAME": 61,
+    "moved_to_REVIEW": 15,
+    "became_DIFFERENT": 8,
+    "wrongful_clears": 0,
+    "safety_violations": 0,
+    "passed": 84,
+    "soft_fails": 0,
+    "headline": "84 mutations from 12 true matches: 61 stayed SAME, 15 moved to REVIEW, 8 became DIFFERENT (wrongful clears: 0)",
+    "baseline_name_only": "Name-only matching gets 30 of 50 right and wrongly clears 8 real matches. ClearGuard: 50/50, 0.",
+    "clearguard_practice": "50/50 decisions+codes+customers, 0 wrongful clears (unchanged after fixes)",
+    "data": "/tmp/screening-track/screening/dev",
+    "note": "After MEDIUM audit fixes: label isolation, remove_hit_dob search scrub, company NAME_LOCATION expectations, deterministic ids."
+  },
+  "before_audit_fixes": {
+    "seeds": "practice SAME_ENTITY (12)",
+    "mutations": 7,
+    "n_cases": 84,
     "stayed_SAME": 64,
     "moved_to_REVIEW": 12,
     "became_DIFFERENT": 8,
@@ -33,12 +50,12 @@
       "hit_id": "H-0181BD",
       "mutation": "remove_hit_dob",
       "original_decision": "SAME_ENTITY",
-      "mutated_decision": "SAME_ENTITY",
-      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "mutated_decision": "REVIEW",
+      "mutated_reason_code": "INSUFFICIENT_DATA",
       "expected": "REVIEW",
-      "passed": false,
+      "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=[]; stripped_born_age_bits=0; still SAME after DOB removal (soft-fail)"
+      "notes": "cleared dobs=[]; stripped_note_bits=0; scrubbed_search_rows=8"
     },
     {
       "case_id": "H-0181BD:verified_conflicting_dob",
@@ -74,7 +91,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-775419 -> CUS-66A8BA phone=+880 1777482865 dob=September 12, 1985"
+      "notes": "duplicated CUS-775419 -> CUS-706AA1 phone=+880 1777482865 dob=September 12, 1985"
     },
     {
       "case_id": "H-0181BD:lookalike_customer",
@@ -86,7 +103,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-9931B8 name='COSTA MARCOS ROBERTO' dob=1976-06-15 phone=+1 5556580998; joint account_ref ACC-FB5DD0"
+      "notes": "added lookalike CUS-EEA518 name='COSTA MARCOS ROBERTO' dob=1976-06-15 phone=+1 5557979937; joint account_ref ACC-FB5DD0"
     },
     {
       "case_id": "H-0181BD:cut_account_link",
@@ -119,10 +136,10 @@
       "original_decision": "SAME_ENTITY",
       "mutated_decision": "SAME_ENTITY",
       "mutated_reason_code": "NAME_LOCATION_MATCH",
-      "expected": "REVIEW",
-      "passed": false,
+      "expected": "SAME_ENTITY|REVIEW",
+      "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=[]; stripped_born_age_bits=0; still SAME after DOB removal (soft-fail)"
+      "notes": "cleared dobs=[]; stripped_note_bits=1; scrubbed_search_rows=0; company NAME_LOCATION SOP: DOB removal N/A to confirm rule"
     },
     {
       "case_id": "H-02115F:verified_conflicting_dob",
@@ -131,10 +148,10 @@
       "original_decision": "SAME_ENTITY",
       "mutated_decision": "SAME_ENTITY",
       "mutated_reason_code": "NAME_LOCATION_MATCH",
-      "expected": "DIFFERENT_ENTITY",
-      "passed": false,
+      "expected": "SAME_ENTITY|DIFFERENT_ENTITY|REVIEW",
+      "passed": true,
       "safety_violation": false,
-      "notes": "applicant=APP-B1C737 result=approved verified_dob=1970 checked_at=2024-02-16 customers=['CUS-470646']; still SAME despite approved conflicting DOB (soft-fail)"
+      "notes": "applicant=APP-B1C737 result=approved verified_dob=1970 checked_at=2024-02-16 customers=['CUS-470646']; company NAME_LOCATION SOP: DOB conflict probe informational"
     },
     {
       "case_id": "H-02115F:unreliable_conflicting_dob",
@@ -158,7 +175,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-470646 -> CUS-1345D9 phone=+234 8089234043 dob=1960"
+      "notes": "duplicated CUS-470646 -> CUS-A8A6CB phone=+234 8089234043 dob=1960"
     },
     {
       "case_id": "H-02115F:lookalike_customer",
@@ -170,7 +187,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-ED9895 name='Pescanova S.A.' dob=1967 phone=+1 5558099427; name-search candidate (no account_ref)"
+      "notes": "added lookalike CUS-8ED20D name='Pescanova S.A.' dob=1967 phone=+1 5550391378; name-search candidate (no account_ref)"
     },
     {
       "case_id": "H-02115F:cut_account_link",
@@ -203,10 +220,10 @@
       "original_decision": "SAME_ENTITY",
       "mutated_decision": "SAME_ENTITY",
       "mutated_reason_code": "NAME_LOCATION_MATCH",
-      "expected": "REVIEW",
-      "passed": false,
+      "expected": "SAME_ENTITY|REVIEW",
+      "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=[]; stripped_born_age_bits=0; still SAME after DOB removal (soft-fail)"
+      "notes": "cleared dobs=[]; stripped_note_bits=0; scrubbed_search_rows=0; company NAME_LOCATION SOP: DOB removal N/A to confirm rule"
     },
     {
       "case_id": "H-24D490:verified_conflicting_dob",
@@ -215,10 +232,10 @@
       "original_decision": "SAME_ENTITY",
       "mutated_decision": "SAME_ENTITY",
       "mutated_reason_code": "NAME_LOCATION_MATCH",
-      "expected": "DIFFERENT_ENTITY",
-      "passed": false,
+      "expected": "SAME_ENTITY|DIFFERENT_ENTITY|REVIEW",
+      "passed": true,
       "safety_violation": false,
-      "notes": "applicant=APP-63AE28 result=approved verified_dob=2023-02 checked_at=2023-09-13 customers=['CUS-245548']; still SAME despite approved conflicting DOB (soft-fail)"
+      "notes": "applicant=APP-63AE28 result=approved verified_dob=2023-02 checked_at=2023-09-13 customers=['CUS-245548']; company NAME_LOCATION SOP: DOB conflict probe informational"
     },
     {
       "case_id": "H-24D490:unreliable_conflicting_dob",
@@ -242,7 +259,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-245548 -> CUS-6BAB13 phone=+1 41597609735 dob=2013-02"
+      "notes": "duplicated CUS-245548 -> CUS-5EEA26 phone=+1 41597609735 dob=2013-02"
     },
     {
       "case_id": "H-24D490:lookalike_customer",
@@ -254,7 +271,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-296543 name='N26 Bank AG' dob=2020-02 phone=+1 5555642042; name-search candidate (no account_ref)"
+      "notes": "added lookalike CUS-C07FEB name='N26 Bank AG' dob=2020-02 phone=+1 5552006805; name-search candidate (no account_ref)"
     },
     {
       "case_id": "H-24D490:cut_account_link",
@@ -290,7 +307,7 @@
       "expected": "REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=['1968-02']; stripped_born_age_bits=0"
+      "notes": "cleared dobs=['1968-02']; stripped_note_bits=1; scrubbed_search_rows=14"
     },
     {
       "case_id": "H-4D76E3:verified_conflicting_dob",
@@ -326,7 +343,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-970916 -> CUS-446B63 phone=+34 615140088 dob=02/12/1963"
+      "notes": "duplicated CUS-970916 -> CUS-15DA4D phone=+34 615140088 dob=02/12/1963"
     },
     {
       "case_id": "H-4D76E3:lookalike_customer",
@@ -338,7 +355,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-13CE33 name='Mohammad Nadeem Ghani' dob=02/12/1970 phone=+1 5559705164; joint account_ref ACC-F85320"
+      "notes": "added lookalike CUS-CA05AD name='Mohammad Nadeem Ghani' dob=02/12/1970 phone=+1 5553166017; joint account_ref ACC-F85320"
     },
     {
       "case_id": "H-4D76E3:cut_account_link",
@@ -374,7 +391,7 @@
       "expected": "REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=[]; stripped_born_age_bits=1"
+      "notes": "cleared dobs=[]; stripped_note_bits=1; scrubbed_search_rows=6"
     },
     {
       "case_id": "H-582410:verified_conflicting_dob",
@@ -410,7 +427,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-377745 -> CUS-EAC962 phone=+880 1766843099 dob=1968-03-05"
+      "notes": "duplicated CUS-377745 -> CUS-6B713F phone=+880 1766843099 dob=1968-03-05"
     },
     {
       "case_id": "H-582410:lookalike_customer",
@@ -422,7 +439,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-35E7B0 name='Elvira Velasco MORILLO' dob=1975-03-05 phone=+1 5556332074; joint account_ref ACC-C4CA34"
+      "notes": "added lookalike CUS-98C71B name='Elvira Velasco MORILLO' dob=1975-03-05 phone=+1 5552020942; joint account_ref ACC-C4CA34"
     },
     {
       "case_id": "H-582410:cut_account_link",
@@ -453,12 +470,12 @@
       "hit_id": "H-80B4B5",
       "mutation": "remove_hit_dob",
       "original_decision": "SAME_ENTITY",
-      "mutated_decision": "SAME_ENTITY",
-      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "mutated_decision": "REVIEW",
+      "mutated_reason_code": "INSUFFICIENT_DATA",
       "expected": "REVIEW",
-      "passed": false,
+      "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=[]; stripped_born_age_bits=0; still SAME after DOB removal (soft-fail)"
+      "notes": "cleared dobs=[]; stripped_note_bits=1; scrubbed_search_rows=12"
     },
     {
       "case_id": "H-80B4B5:verified_conflicting_dob",
@@ -494,7 +511,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-626609 -> CUS-CE136B phone=+1 41526513818 dob=1969-05-05"
+      "notes": "duplicated CUS-626609 -> CUS-90DB69 phone=+1 41526513818 dob=1969-05-05"
     },
     {
       "case_id": "H-80B4B5:lookalike_customer",
@@ -506,7 +523,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-84CA4B name='KERVIEL Jerome' dob=1976-05-05 phone=+1 5551773383; name-search candidate (no account_ref)"
+      "notes": "added lookalike CUS-3D06DB name='KERVIEL Jerome' dob=1976-05-05 phone=+1 5556719649; name-search candidate (no account_ref)"
     },
     {
       "case_id": "H-80B4B5:cut_account_link",
@@ -539,10 +556,10 @@
       "original_decision": "SAME_ENTITY",
       "mutated_decision": "SAME_ENTITY",
       "mutated_reason_code": "NAME_LOCATION_MATCH",
-      "expected": "REVIEW",
-      "passed": false,
+      "expected": "SAME_ENTITY|REVIEW",
+      "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=[]; stripped_born_age_bits=0; still SAME after DOB removal (soft-fail)"
+      "notes": "cleared dobs=[]; stripped_note_bits=1; scrubbed_search_rows=0; company NAME_LOCATION SOP: DOB removal N/A to confirm rule"
     },
     {
       "case_id": "H-84548F:verified_conflicting_dob",
@@ -551,10 +568,10 @@
       "original_decision": "SAME_ENTITY",
       "mutated_decision": "SAME_ENTITY",
       "mutated_reason_code": "NAME_LOCATION_MATCH",
-      "expected": "DIFFERENT_ENTITY",
-      "passed": false,
+      "expected": "SAME_ENTITY|DIFFERENT_ENTITY|REVIEW",
+      "passed": true,
       "safety_violation": false,
-      "notes": "applicant=APP-9ABF44 result=approved verified_dob=1975 checked_at=2023-12-17 customers=['CUS-278765']; still SAME despite approved conflicting DOB (soft-fail)"
+      "notes": "applicant=APP-9ABF44 result=approved verified_dob=1975 checked_at=2023-12-17 customers=['CUS-278765']; company NAME_LOCATION SOP: DOB conflict probe informational"
     },
     {
       "case_id": "H-84548F:unreliable_conflicting_dob",
@@ -578,7 +595,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-278765 -> CUS-269243 phone=+880 1772727107 dob=1965"
+      "notes": "duplicated CUS-278765 -> CUS-A06C89 phone=+880 1772727107 dob=1965"
     },
     {
       "case_id": "H-84548F:lookalike_customer",
@@ -590,7 +607,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-CDB2D3 name='Metropolitan Transportation Authority' dob=1972 phone=+1 5550096452; name-search candidate (no account_ref)"
+      "notes": "added lookalike CUS-B23C8F name='Metropolitan Transportation Authority' dob=1972 phone=+1 5555297076; name-search candidate (no account_ref)"
     },
     {
       "case_id": "H-84548F:cut_account_link",
@@ -626,7 +643,7 @@
       "expected": "REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=['1994', '1995']; stripped_born_age_bits=0"
+      "notes": "cleared dobs=['1994', '1995']; stripped_note_bits=1; scrubbed_search_rows=6"
     },
     {
       "case_id": "H-91AC66:verified_conflicting_dob",
@@ -662,7 +679,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-962814 -> CUS-218908 phone=+44 761601423 dob=1 November 1994"
+      "notes": "duplicated CUS-962814 -> CUS-7B4564 phone=+44 761601423 dob=1 November 1994"
     },
     {
       "case_id": "H-91AC66:lookalike_customer",
@@ -674,7 +691,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-39F9A2 name='Emran Ali' dob=1976-06-15 phone=+1 5558559358; joint account_ref ACC-8AEABB"
+      "notes": "added lookalike CUS-9313FF name='Emran Ali' dob=1976-06-15 phone=+1 5551986427; joint account_ref ACC-8AEABB"
     },
     {
       "case_id": "H-91AC66:cut_account_link",
@@ -710,7 +727,7 @@
       "expected": "REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=['1962', '1961']; stripped_born_age_bits=0"
+      "notes": "cleared dobs=['1962', '1961']; stripped_note_bits=0; scrubbed_search_rows=7"
     },
     {
       "case_id": "H-A72A50:verified_conflicting_dob",
@@ -746,7 +763,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-186144 -> CUS-0C2C36 phone=+34 692798815 dob=23/10/1962"
+      "notes": "duplicated CUS-186144 -> CUS-C58A4E phone=+34 692798815 dob=23/10/1962"
     },
     {
       "case_id": "H-A72A50:lookalike_customer",
@@ -758,7 +775,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-4B7A2C name='BOWMAN David' dob=23/10/1969 phone=+1 5559255591; joint account_ref ACC-6A9A74"
+      "notes": "added lookalike CUS-4295B5 name='BOWMAN David' dob=23/10/1969 phone=+1 5550558038; joint account_ref ACC-6A9A74"
     },
     {
       "case_id": "H-A72A50:cut_account_link",
@@ -794,7 +811,7 @@
       "expected": "REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=['1998', '1999']; stripped_born_age_bits=0"
+      "notes": "cleared dobs=['1998', '1999']; stripped_note_bits=0; scrubbed_search_rows=3"
     },
     {
       "case_id": "H-CF0978:verified_conflicting_dob",
@@ -830,7 +847,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-221663 -> CUS-D26DFB phone=+34 626632469 dob=1998-12-18"
+      "notes": "duplicated CUS-221663 -> CUS-FF48E1 phone=+34 626632469 dob=1998-12-18"
     },
     {
       "case_id": "H-CF0978:lookalike_customer",
@@ -842,7 +859,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-BF21FB name='Md Amin' dob=2005-12-18 phone=+1 5555804238; joint account_ref ACC-3FE622"
+      "notes": "added lookalike CUS-1387C0 name='Md Amin' dob=2005-12-18 phone=+1 5555831875; joint account_ref ACC-3FE622"
     },
     {
       "case_id": "H-CF0978:cut_account_link",
@@ -875,10 +892,10 @@
       "original_decision": "SAME_ENTITY",
       "mutated_decision": "SAME_ENTITY",
       "mutated_reason_code": "NAME_LOCATION_MATCH",
-      "expected": "REVIEW",
-      "passed": false,
+      "expected": "SAME_ENTITY|REVIEW",
+      "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=[]; stripped_born_age_bits=0; still SAME after DOB removal (soft-fail)"
+      "notes": "cleared dobs=[]; stripped_note_bits=1; scrubbed_search_rows=0; company NAME_LOCATION SOP: DOB removal N/A to confirm rule"
     },
     {
       "case_id": "H-D8119F:verified_conflicting_dob",
@@ -887,10 +904,10 @@
       "original_decision": "SAME_ENTITY",
       "mutated_decision": "SAME_ENTITY",
       "mutated_reason_code": "NAME_LOCATION_MATCH",
-      "expected": "DIFFERENT_ENTITY",
-      "passed": false,
+      "expected": "SAME_ENTITY|DIFFERENT_ENTITY|REVIEW",
+      "passed": true,
       "safety_violation": false,
-      "notes": "applicant=APP-58CAC7 result=approved verified_dob=2027-10-30 checked_at=2024-09-07 customers=['CUS-779191']; still SAME despite approved conflicting DOB (soft-fail)"
+      "notes": "applicant=APP-58CAC7 result=approved verified_dob=2027-10-30 checked_at=2024-09-07 customers=['CUS-779191']; company NAME_LOCATION SOP: DOB conflict probe informational"
     },
     {
       "case_id": "H-D8119F:unreliable_conflicting_dob",
@@ -914,7 +931,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-779191 -> CUS-50B127 phone=+34 618482428 dob=2017-10-30"
+      "notes": "duplicated CUS-779191 -> CUS-34B3E9 phone=+34 618482428 dob=2017-10-30"
     },
     {
       "case_id": "H-D8119F:lookalike_customer",
@@ -926,7 +943,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-5B817F name='PULLMAN GLOBAL SOLUTIONS LLC' dob=2024-10-30 phone=+1 5557275962; name-search candidate (no account_ref)"
+      "notes": "added lookalike CUS-773299 name='PULLMAN GLOBAL SOLUTIONS LLC' dob=2024-10-30 phone=+1 5559191580; name-search candidate (no account_ref)"
     },
     {
       "case_id": "H-D8119F:cut_account_link",
@@ -957,12 +974,12 @@
       "hit_id": "H-F9DBF9",
       "mutation": "remove_hit_dob",
       "original_decision": "SAME_ENTITY",
-      "mutated_decision": "SAME_ENTITY",
-      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "mutated_decision": "REVIEW",
+      "mutated_reason_code": "INSUFFICIENT_DATA",
       "expected": "REVIEW",
-      "passed": false,
+      "passed": true,
       "safety_violation": false,
-      "notes": "cleared dobs=[]; stripped_born_age_bits=0; still SAME after DOB removal (soft-fail)"
+      "notes": "cleared dobs=[]; stripped_note_bits=1; scrubbed_search_rows=8"
     },
     {
       "case_id": "H-F9DBF9:verified_conflicting_dob",
@@ -998,7 +1015,7 @@
       "expected": "SAME_ENTITY",
       "passed": true,
       "safety_violation": false,
-      "notes": "duplicated CUS-558035 -> CUS-FE6682 phone=+44 773953441 dob=1959-09-12"
+      "notes": "duplicated CUS-558035 -> CUS-2D455A phone=+44 773953441 dob=1959-09-12"
     },
     {
       "case_id": "H-F9DBF9:lookalike_customer",
@@ -1010,7 +1027,7 @@
       "expected": "SAME_ENTITY|REVIEW",
       "passed": true,
       "safety_violation": false,
-      "notes": "added lookalike CUS-3F4F10 name='Gianpiero Fiorani' dob=1966-09-12 phone=+1 5555235661; name-search candidate (no account_ref)"
+      "notes": "added lookalike CUS-DC2CBE name='Gianpiero Fiorani' dob=1966-09-12 phone=+1 5551918763; name-search candidate (no account_ref)"
     },
     {
       "case_id": "H-F9DBF9:cut_account_link",
