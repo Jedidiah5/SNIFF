@@ -1,0 +1,3 @@
+# Name-only baseline
+
+A deliberately harsh ClearGuard foil: `name_only.py` resolves customers from alert `account_ref` (all joint holders), else `login_handle`, else `email`, then marks `SAME_ENTITY` only when `hit.name` equals a customer `full_name` after lowercase+strip — no accent folding or fuzzy match; unresolved customers become `DIFFERENT_ENTITY`. Run `python3 baseline/name_only.py --data /tmp/screening-track/screening/dev --out /tmp/clearguard-harness/baseline.jsonl --labels /tmp/screening-track/screening/dev/practice_labels.jsonl` to write decisions for every hit and print decision accuracy, wrongful clears, false confirms, and the demo one-liner.
