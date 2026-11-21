@@ -9,6 +9,11 @@ from decide import Index, decide_hit  # noqa: E402
 
 
 def run(data_dir, out_path, debug=False):
+    try:
+        import llm_locate
+        llm_locate.reset_run_state()
+    except Exception:
+        pass
     data = load_data(data_dir)
     ix = Index(data)
     alerts = {a["alert_id"]: a for a in data["alerts"]}
