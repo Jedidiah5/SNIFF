@@ -229,11 +229,13 @@ def _year_ok(d, created):
     return True
 
 
-def _birth_keyword_near(text, start, end, radius=40):
-    """True if born/birth/DOB/date of birth sits within ~40 chars on either side of the date."""
+def _birth_keyword_sides(text, start, end, radius=40):
+    """Return (near, keyword_before_date, keyword_after_date)."""
     left = text[max(0, start - radius):start]
     right = text[end:min(len(text), end + radius)]
-    return bool(BIRTH_TOKEN.search(left) or BIRTH_TOKEN.search(right))
+    before = bool(BIRTH_TOKEN.search(left))
+    after = bool(BIRTH_TOKEN.search(right))
+    return (before or after), before, after
 
 
 def _trust_note_name(cand, names_obj, anchors, blocklist):
@@ -257,6 +259,22 @@ def _trust_note_name(cand, names_obj, anchors, blocklist):
     return cand, False
 
 
+def _pick_trusted_name(cands, names_obj, anchors, blocklist):
+    """Try candidates longest-first; skip spans whose parts are all blocked."""
+    any_failed = False
+    for cand in sorted(set(cands), key=len, reverse=True):
+        parts = [p for p in names_obj.parts(cand, False) if p not in blocklist]
+        if len(parts) < 2:
+            any_failed = True
+            continue
+        name, failed = _trust_note_name(cand, names_obj, anchors, blocklist)
+        if name:
+            return name, False
+        if failed:
+            any_failed = True
+    return None, any_failed
+
+
 def parse_kyc_note(note, names_obj, anchors, providers=None):
     """Extract verified name/DOB from a KYC note (SOP principles 4 and 8).
 
@@ -273,9 +291,9 @@ def parse_kyc_note(note, names_obj, anchors, providers=None):
         if words:
             caps_cands.append(" ".join(words))
     name, name_check_failed = None, False
+    name_from_title_case = False
     if caps_cands:
-        best = max(caps_cands, key=len)
-        name, name_check_failed = _trust_note_name(best, names_obj, anchors, blocklist)
+        name, name_check_failed = _pick_trusted_name(caps_cands, names_obj, anchors, blocklist)
     else:
         title_cands = []
         for m in TITLE_NAME.finditer(text):
@@ -283,8 +301,8 @@ def parse_kyc_note(note, names_obj, anchors, providers=None):
             if len(words) >= 2:
                 title_cands.append(" ".join(words))
         if title_cands:
-            best = max(title_cands, key=len)
-            name, name_check_failed = _trust_note_name(best, names_obj, anchors, blocklist)
+            name, name_check_failed = _pick_trusted_name(title_cands, names_obj, anchors, blocklist)
+            name_from_title_case = bool(name)
 
     # DOB: keyword within ~40 chars either side; else single non-created_at date only.
     dated = []
@@ -303,13 +321,18 @@ def parse_kyc_note(note, names_obj, anchors, providers=None):
         non_created.append((start, end, raw, d))
 
     dob, dob_keyword_anchored = None, False
+    dob_keyword_before = False  # classic: cue left of the date
+    dob_keyword_after_only = False  # needed the either-side window (cue right of date only)
     for start, end, raw, d in dated:
         if created and d == created:
             continue
         if not _year_ok(d, created):
             continue
-        if _birth_keyword_near(text, start, end):
+        near, before, after = _birth_keyword_sides(text, start, end)
+        if near:
             dob, dob_keyword_anchored = d, True
+            dob_keyword_before = before
+            dob_keyword_after_only = (not before) and after
             break
     if dob is None and len(non_created) == 1 and _year_ok(non_created[0][3], created):
         dob, dob_keyword_anchored = non_created[0][3], False
@@ -321,6 +344,9 @@ def parse_kyc_note(note, names_obj, anchors, providers=None):
     return {"name": name, "dob": dob, "country": countries[0] if countries else None,
             "date": created, "id": note.get("note_id"), "source": "note",
             "unusual": unusual, "dob_keyword_anchored": dob_keyword_anchored,
+            "dob_keyword_before": dob_keyword_before,
+            "dob_keyword_after_only": dob_keyword_after_only,
+            "name_from_title_case": name_from_title_case,
             "name_check_failed": name_check_failed}
 
 
@@ -342,7 +368,8 @@ def customer_facts(ix, person, alert=None):
             verified.append({"name": k.get("verified_name"), "dob": parse_date(k.get("verified_dob")),
                              "country": norm_country(k.get("document_country")),
                              "date": parse_date(k.get("checked_at")), "id": k.get("check_id"), "source": "kyc",
-                             "unusual": False})
+                             "unusual": False, "name_from_title_case": False,
+                             "dob_keyword_after_only": False, "name_check_failed": False})
     notes_seen = set()
     lived = {}
     for rid in person:
@@ -385,12 +412,17 @@ def customer_facts(ix, person, alert=None):
     note_unusual = bool(latest and latest.get("source") == "note" and latest.get("unusual"))
     dob_from_note = bool(latest and latest.get("source") == "note" and latest.get("dob") and dob_src == latest.get("id"))
     name_from_note = bool(latest and latest.get("source") == "note" and latest.get("name"))
+    name_from_title_case = bool(latest and latest.get("source") == "note" and latest.get("name_from_title_case"))
+    note_name_failed = bool(latest and latest.get("source") == "note" and latest.get("name_check_failed"))
+    dob_keyword_after_only = bool(latest and latest.get("source") == "note" and latest.get("dob_keyword_after_only"))
     return {
         "records": person, "company": company, "verified": latest,
         "verified_name": latest["name"] if latest else None,
         "record_names": names, "dob": dob, "dob_src": dob_src,
         "countries": countries, "entity_type": "Company" if company else "Individual",
         "note_unusual": note_unusual, "dob_from_note": dob_from_note, "name_from_note": name_from_note,
+        "name_from_title_case": name_from_title_case, "note_name_failed": note_name_failed,
+        "dob_keyword_after_only": dob_keyword_after_only,
     }
 
 
@@ -702,6 +734,22 @@ def decide_person(ix, alert, h, cf):
             evid.append(cf["verified"]["id"])
         else:
             evid.append(cf["records"][0])
+
+    # Confirmations that rest only on fragile note parsing → REVIEW (same fail-safe as clears).
+    # Title Case note names, note DOBs found only via a keyword *after* the date, or note DOB
+    # used while the note's name check failed (so CRM names fill in) are not solid enough to confirm.
+    fragile_confirm = False
+    if name_agree and (dob_agree or (cf["company"] and h_company and loc_agree)):
+        if cf.get("name_from_title_case"):
+            fragile_confirm = True
+        if cf.get("dob_from_note") and cf.get("dob_keyword_after_only"):
+            fragile_confirm = True
+        if cf.get("dob_from_note") and cf.get("note_name_failed") and not cf.get("verified_name"):
+            fragile_confirm = True
+    if fragile_confirm:
+        reason = ("Agreement rests only on free-text parsing that is not reliable enough to confirm "
+                  "the hit, so a person must review it. " + " ".join(agree_bits))
+        return "REVIEW", "INSUFFICIENT_DATA", reason, evid
 
     if cf["company"] and h_company:
         if name_agree and loc_agree:
