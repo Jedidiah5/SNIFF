@@ -1,20 +1,29 @@
 {
   "summary": {
-    "seeds": "practice SAME_ENTITY (12)",
-    "mutations": 7,
-    "n_cases": 84,
-    "stayed_SAME": 61,
+    "headline": "108 mutations from 12 true matches: 85 stayed SAME, 15 moved to REVIEW, 8 became DIFFERENT (wrongful clears: 0)",
+    "n_seeds": 12,
+    "n_cases": 108,
+    "passed": 108,
+    "failures": 0,
+    "safety_violations": 0,
+    "stayed_SAME": 85,
     "moved_to_REVIEW": 15,
     "became_DIFFERENT": 8,
-    "wrongful_clears": 0,
-    "safety_violations": 0,
-    "passed": 84,
-    "soft_fails": 0,
-    "headline": "84 mutations from 12 true matches: 61 stayed SAME, 15 moved to REVIEW, 8 became DIFFERENT (wrongful clears: 0)",
+    "mutations": [
+      "name_variant",
+      "remove_hit_dob",
+      "verified_conflicting_dob",
+      "unreliable_conflicting_dob",
+      "duplicate_customer",
+      "lookalike_customer",
+      "cut_account_link",
+      "randomize_ids",
+      "reorder_records"
+    ],
     "baseline_name_only": "Name-only matching gets 30 of 50 right and wrongly clears 8 real matches. ClearGuard: 50/50, 0.",
-    "clearguard_practice": "50/50 decisions+codes+customers, 0 wrongful clears (unchanged after fixes)",
-    "data": "/tmp/screening-track/screening/dev",
-    "note": "After MEDIUM audit fixes: label isolation, remove_hit_dob search scrub, company NAME_LOCATION expectations, deterministic ids."
+    "clearguard_practice": "50/50 after merging Plan A engine updates; 0 wrongful clears",
+    "demo_quick": "27 mutations from 3 showcase hits: 0 failures, 0 safety violations",
+    "note": "Includes randomize_ids + reorder_records. Metrics from live harness/demo.py run."
   },
   "before_audit_fixes": {
     "seeds": "practice SAME_ENTITY (12)",
@@ -118,6 +127,31 @@
       "notes": "nulled links was={'account_ref': 'ACC-FB5DD0', 'login_handle': None, 'email': None}"
     },
     {
+      "case_id": "H-0181BD:randomize_ids",
+      "hit_id": "H-0181BD",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-0181BD -> H-7CDAF5",
+      "tracked_hit_id": "H-7CDAF5"
+    },
+    {
+      "case_id": "H-0181BD:reorder_records",
+      "hit_id": "H-0181BD",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
+    },
+    {
       "case_id": "H-02115F:name_variant",
       "hit_id": "H-02115F",
       "mutation": "name_variant",
@@ -200,6 +234,31 @@
       "passed": true,
       "safety_violation": false,
       "notes": "nulled links was={'account_ref': None, 'login_handle': 'pescanov2115', 'email': None}"
+    },
+    {
+      "case_id": "H-02115F:randomize_ids",
+      "hit_id": "H-02115F",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-02115F -> H-0234CA",
+      "tracked_hit_id": "H-0234CA"
+    },
+    {
+      "case_id": "H-02115F:reorder_records",
+      "hit_id": "H-02115F",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
     },
     {
       "case_id": "H-24D490:name_variant",
@@ -286,6 +345,31 @@
       "notes": "nulled links was={'account_ref': None, 'login_handle': None, 'email': None}"
     },
     {
+      "case_id": "H-24D490:randomize_ids",
+      "hit_id": "H-24D490",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-24D490 -> H-98395B",
+      "tracked_hit_id": "H-98395B"
+    },
+    {
+      "case_id": "H-24D490:reorder_records",
+      "hit_id": "H-24D490",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
+    },
+    {
       "case_id": "H-4D76E3:name_variant",
       "hit_id": "H-4D76E3",
       "mutation": "name_variant",
@@ -368,6 +452,31 @@
       "passed": true,
       "safety_violation": false,
       "notes": "nulled links was={'account_ref': 'ACC-F85320', 'login_handle': None, 'email': None}"
+    },
+    {
+      "case_id": "H-4D76E3:randomize_ids",
+      "hit_id": "H-4D76E3",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-4D76E3 -> H-7356DF",
+      "tracked_hit_id": "H-7356DF"
+    },
+    {
+      "case_id": "H-4D76E3:reorder_records",
+      "hit_id": "H-4D76E3",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
     },
     {
       "case_id": "H-582410:name_variant",
@@ -454,6 +563,31 @@
       "notes": "nulled links was={'account_ref': 'ACC-C4CA34', 'login_handle': None, 'email': None}"
     },
     {
+      "case_id": "H-582410:randomize_ids",
+      "hit_id": "H-582410",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-582410 -> H-178568",
+      "tracked_hit_id": "H-178568"
+    },
+    {
+      "case_id": "H-582410:reorder_records",
+      "hit_id": "H-582410",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
+    },
+    {
       "case_id": "H-80B4B5:name_variant",
       "hit_id": "H-80B4B5",
       "mutation": "name_variant",
@@ -536,6 +670,31 @@
       "passed": true,
       "safety_violation": false,
       "notes": "nulled links was={'account_ref': None, 'login_handle': 'kervielj1155', 'email': None}"
+    },
+    {
+      "case_id": "H-80B4B5:randomize_ids",
+      "hit_id": "H-80B4B5",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-80B4B5 -> H-6BA199",
+      "tracked_hit_id": "H-6BA199"
+    },
+    {
+      "case_id": "H-80B4B5:reorder_records",
+      "hit_id": "H-80B4B5",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
     },
     {
       "case_id": "H-84548F:name_variant",
@@ -622,6 +781,31 @@
       "notes": "nulled links was={'account_ref': None, 'login_handle': None, 'email': None}"
     },
     {
+      "case_id": "H-84548F:randomize_ids",
+      "hit_id": "H-84548F",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-84548F -> H-1E8D34",
+      "tracked_hit_id": "H-1E8D34"
+    },
+    {
+      "case_id": "H-84548F:reorder_records",
+      "hit_id": "H-84548F",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
+    },
+    {
       "case_id": "H-91AC66:name_variant",
       "hit_id": "H-91AC66",
       "mutation": "name_variant",
@@ -704,6 +888,31 @@
       "passed": true,
       "safety_violation": false,
       "notes": "nulled links was={'account_ref': 'ACC-8AEABB', 'login_handle': None, 'email': None}"
+    },
+    {
+      "case_id": "H-91AC66:randomize_ids",
+      "hit_id": "H-91AC66",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-91AC66 -> H-6CAD42",
+      "tracked_hit_id": "H-6CAD42"
+    },
+    {
+      "case_id": "H-91AC66:reorder_records",
+      "hit_id": "H-91AC66",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
     },
     {
       "case_id": "H-A72A50:name_variant",
@@ -790,6 +999,31 @@
       "notes": "nulled links was={'account_ref': 'ACC-6A9A74', 'login_handle': None, 'email': None}"
     },
     {
+      "case_id": "H-A72A50:randomize_ids",
+      "hit_id": "H-A72A50",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-A72A50 -> H-768474",
+      "tracked_hit_id": "H-768474"
+    },
+    {
+      "case_id": "H-A72A50:reorder_records",
+      "hit_id": "H-A72A50",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
+    },
+    {
       "case_id": "H-CF0978:name_variant",
       "hit_id": "H-CF0978",
       "mutation": "name_variant",
@@ -872,6 +1106,31 @@
       "passed": true,
       "safety_violation": false,
       "notes": "nulled links was={'account_ref': 'ACC-3FE622', 'login_handle': None, 'email': None}"
+    },
+    {
+      "case_id": "H-CF0978:randomize_ids",
+      "hit_id": "H-CF0978",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-CF0978 -> H-9CFAAB",
+      "tracked_hit_id": "H-9CFAAB"
+    },
+    {
+      "case_id": "H-CF0978:reorder_records",
+      "hit_id": "H-CF0978",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
     },
     {
       "case_id": "H-D8119F:name_variant",
@@ -958,6 +1217,31 @@
       "notes": "nulled links was={'account_ref': None, 'login_handle': 'pullmanl2111', 'email': None}"
     },
     {
+      "case_id": "H-D8119F:randomize_ids",
+      "hit_id": "H-D8119F",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-D8119F -> H-9598AB",
+      "tracked_hit_id": "H-9598AB"
+    },
+    {
+      "case_id": "H-D8119F:reorder_records",
+      "hit_id": "H-D8119F",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
+    },
+    {
       "case_id": "H-F9DBF9:name_variant",
       "hit_id": "H-F9DBF9",
       "mutation": "name_variant",
@@ -1040,6 +1324,31 @@
       "passed": true,
       "safety_violation": false,
       "notes": "nulled links was={'account_ref': None, 'login_handle': None, 'email': 'gianpiero.fiorani9470@post.example'}"
+    },
+    {
+      "case_id": "H-F9DBF9:randomize_ids",
+      "hit_id": "H-F9DBF9",
+      "mutation": "randomize_ids",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "remapped 303766 ids; hit H-F9DBF9 -> H-45D443",
+      "tracked_hit_id": "H-45D443"
+    },
+    {
+      "case_id": "H-F9DBF9:reorder_records",
+      "hit_id": "H-F9DBF9",
+      "mutation": "reorder_records",
+      "original_decision": "SAME_ENTITY",
+      "mutated_decision": "SAME_ENTITY",
+      "mutated_reason_code": "NAME_DOB_LOCATION_MATCH",
+      "expected": "SAME_ENTITY",
+      "passed": true,
+      "safety_violation": false,
+      "notes": "shuffled rows {'hits': 819, 'alerts': 440, 'customers': 72265, 'accounts': 86659, 'onboarding': 72265, 'kyc': 54488, 'search': 16882}"
     }
   ]
 }

@@ -174,5 +174,37 @@ class TestDeterministicIds(unittest.TestCase):
         self.assertEqual(phone, f"+1 555{harness.stable_int('H-0181BD', 10_000_000):07d}")
 
 
+class TestGeneralizationMutations(unittest.TestCase):
+    def test_randomize_ids_same_passes(self):
+        _, passed, safety, _ = harness.evaluate(
+            "randomize_ids", "SAME_ENTITY", "SAME_ENTITY", "NAME_DOB_MATCH",
+            original_reason="NAME_DOB_MATCH", entity_type="Individual",
+        )
+        self.assertTrue(passed)
+        self.assertFalse(safety)
+
+    def test_randomize_ids_wrongful_clear_is_safety(self):
+        _, passed, safety, _ = harness.evaluate(
+            "randomize_ids", "SAME_ENTITY", "DIFFERENT_ENTITY", "LOCATION_MISMATCH",
+            original_reason="NAME_DOB_MATCH", entity_type="Individual",
+        )
+        self.assertFalse(passed)
+        self.assertTrue(safety)
+
+    def test_reorder_records_change_is_soft_fail_not_always_safety(self):
+        # SAME -> REVIEW is an expectation miss, not a wrongful clear
+        _, passed, safety, _ = harness.evaluate(
+            "reorder_records", "SAME_ENTITY", "REVIEW", "INSUFFICIENT_DATA",
+            original_reason="NAME_DOB_MATCH", entity_type="Individual",
+        )
+        self.assertFalse(passed)
+        self.assertFalse(safety)
+
+    def test_mutation_order_includes_generalization_probes(self):
+        self.assertIn("randomize_ids", harness.MUTATION_ORDER)
+        self.assertIn("reorder_records", harness.MUTATION_ORDER)
+        self.assertIn("randomize_ids", harness.NO_WRONGFUL_CLEAR)
+
+
 if __name__ == "__main__":
     unittest.main()

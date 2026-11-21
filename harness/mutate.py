@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -20,7 +22,7 @@ import tempfile
 import unicodedata
 from copy import deepcopy
 from datetime import date, timedelta
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RUN_BIN = os.path.join(REPO, "system", "run")
@@ -34,6 +36,8 @@ MUTATION_ORDER = [
     "duplicate_customer",
     "lookalike_customer",
     "cut_account_link",
+    "randomize_ids",
+    "reorder_records",
 ]
 
 # Mutations that must never turn a true SAME into DIFFERENT_ENTITY.
@@ -44,7 +48,12 @@ NO_WRONGFUL_CLEAR = {
     "duplicate_customer",
     "lookalike_customer",
     "cut_account_link",
+    "randomize_ids",
+    "reorder_records",
 }
+
+# ID prefixes remapped by randomize_ids (deterministic, evidence-preserving).
+_ID_PREFIXES = ("H-", "A-", "CUS-", "ACC-", "APP-", "KYC-", "NOTE-", "SR-", "DOC-")
 
 BORN_AGE_SENTENCE = re.compile(
     r"(?is)(?:^|[.!?]\s+|[;\n]\s*)("
@@ -586,6 +595,77 @@ def mutate_cut_account_link(ctx: DataCtx, hit_id: str, _hints: List[str]) -> str
     return f"nulled links was={before}"
 
 
+def _looks_like_id(value: Any) -> bool:
+    return isinstance(value, str) and any(value.startswith(p) for p in _ID_PREFIXES)
+
+
+def _remap_value(value: Any, id_map: Dict[str, str]) -> Any:
+    if isinstance(value, str):
+        return id_map.get(value, value)
+    if isinstance(value, list):
+        return [_remap_value(v, id_map) for v in value]
+    if isinstance(value, dict):
+        return {k: _remap_value(v, id_map) for k, v in value.items()}
+    return value
+
+
+def mutate_randomize_ids(ctx: DataCtx, hit_id: str, _hints: List[str]) -> str:
+    """Rewrite identifier strings deterministically. Decisions must not depend on ID spellings."""
+    salt = f"rand:{hit_id}"
+    tables = [ctx.hits, ctx.alerts, ctx.customers, ctx.accounts, ctx.onboarding, ctx.kyc, ctx.search]
+    seen: Dict[str, str] = {}
+    for rows in tables:
+        for row in rows:
+            for v in row.values():
+                stack = [v]
+                while stack:
+                    cur = stack.pop()
+                    if isinstance(cur, list):
+                        stack.extend(cur)
+                    elif isinstance(cur, dict):
+                        stack.extend(cur.values())
+                    elif _looks_like_id(cur) and cur not in seen:
+                        prefix = next(p for p in _ID_PREFIXES if cur.startswith(p))
+                        seen[cur] = f"{prefix}{stable_digest(salt + ':' + cur, 6)}"
+
+    for rows in tables:
+        for i, row in enumerate(rows):
+            rows[i] = _remap_value(row, seen)
+
+    # Rebuild indexes after remap
+    ctx.hit_by_id = {h["hit_id"]: h for h in ctx.hits}
+    ctx.alert_by_id = {a["alert_id"]: a for a in ctx.alerts}
+    ctx.cust_by_id = {c["record_id"]: c for c in ctx.customers}
+    ctx.acc_by_id = {}
+    for a in ctx.accounts:
+        ctx.acc_by_id.setdefault(a.get("account_id"), []).append(a)
+    ctx.onb_by_acc = {o.get("account_id"): o for o in ctx.onboarding}
+    ctx.onb_by_cust = {}
+    for o in ctx.onboarding:
+        ctx.onb_by_cust.setdefault(o.get("customer_id"), []).append(o)
+
+    new_hit = seen.get(hit_id, hit_id)
+    ctx.tracked_hit_id = new_hit
+    ctx.save("hits", "alerts", "customers", "accounts", "onboarding", "kyc", "search")
+    return f"remapped {len(seen)} ids; hit {hit_id} -> {new_hit}"
+
+
+def mutate_reorder_records(ctx: DataCtx, hit_id: str, _hints: List[str]) -> str:
+    """Deterministically shuffle JSONL row order. Decisions must be order-independent."""
+    rng = random.Random(stable_int(f"reorder:{hit_id}"))
+    counts = {}
+    for key in ("hits", "alerts", "customers", "accounts", "onboarding", "kyc", "search"):
+        rows = getattr(ctx, key)
+        rng.shuffle(rows)
+        counts[key] = len(rows)
+    # Rebuild hit/alert indexes after shuffle (identity unchanged)
+    ctx.hit_by_id = {h["hit_id"]: h for h in ctx.hits}
+    ctx.alert_by_id = {a["alert_id"]: a for a in ctx.alerts}
+    ctx.cust_by_id = {c["record_id"]: c for c in ctx.customers}
+    ctx.save("hits", "alerts", "customers", "accounts", "onboarding", "kyc", "search")
+    return f"shuffled rows {counts}"
+
+
 MUTATORS: Dict[str, Callable[[DataCtx, str, List[str]], str]] = {
     "name_variant": mutate_name_variant,
     "remove_hit_dob": mutate_remove_hit_dob,
@@ -594,6 +674,8 @@ MUTATORS: Dict[str, Callable[[DataCtx, str, List[str]], str]] = {
     "duplicate_customer": mutate_duplicate_customer,
     "lookalike_customer": mutate_lookalike_customer,
     "cut_account_link": mutate_cut_account_link,
+    "randomize_ids": mutate_randomize_ids,
+    "reorder_records": mutate_reorder_records,
 }
 
 
@@ -700,6 +782,16 @@ def evaluate(
             safety = True
             passed = False
             notes.append("wrongful clear after cutting account link")
+    elif mutation in ("randomize_ids", "reorder_records"):
+        # Generalization probes: same decision expected; DIFFERENT is a safety failure.
+        expected = original
+        passed = mutated == original
+        if mutated == "DIFFERENT_ENTITY" and original == "SAME_ENTITY":
+            safety = True
+            passed = False
+            notes.append(f"wrongful clear after {mutation}")
+        elif not passed:
+            notes.append(f"decision changed {original}->{mutated} after {mutation}")
     else:
         expected = original
         passed = mutated == original
@@ -817,7 +909,8 @@ def run_case(
                 "notes": mut_note,
             }
         mutated_map = run_engine(dest, out_file)
-        mrow = mutated_map.get(hit_id) or {}
+        tracked = getattr(ctx, "tracked_hit_id", None) or hit_id
+        mrow = mutated_map.get(tracked) or mutated_map.get(hit_id) or {}
         mutated = mrow.get("decision") or "MISSING"
         reason = mrow.get("reason_code")
         expected, passed, safety, eval_notes = evaluate(
@@ -825,7 +918,7 @@ def run_case(
             original_reason=original_reason, entity_type=entity_type,
         )
         notes_parts = [p for p in (mut_note, eval_notes) if p]
-        return {
+        row = {
             "case_id": case_id,
             "hit_id": hit_id,
             "mutation": mutation,
@@ -837,6 +930,9 @@ def run_case(
             "safety_violation": safety,
             "notes": "; ".join(notes_parts),
         }
+        if tracked != hit_id:
+            row["tracked_hit_id"] = tracked
+        return row
     except Exception as e:
         return {
             "case_id": case_id,
@@ -892,10 +988,145 @@ def headline(results: List[dict], n_seeds: int) -> str:
     )
 
 
+def write_html_report(results: List[dict], n_seeds: int, path: str, title: str = "ClearGuard Trick-Test Harness") -> None:
+    """Write a self-contained HTML report from measured results (no hardcoded metrics)."""
+    stayed = sum(1 for r in results if r["mutated_decision"] == "SAME_ENTITY")
+    review = sum(1 for r in results if r["mutated_decision"] == "REVIEW")
+    diff = sum(1 for r in results if r["mutated_decision"] == "DIFFERENT_ENTITY")
+    passed = sum(1 for r in results if r.get("passed"))
+    fails = [r for r in results if not r.get("passed")]
+    viols = [r for r in results if r.get("safety_violation")]
+    wrongful = sum(
+        1 for r in results
+        if r["original_decision"] == "SAME_ENTITY"
+        and r["mutated_decision"] == "DIFFERENT_ENTITY"
+        and r["mutation"] in NO_WRONGFUL_CLEAR
+    )
+    line = headline(results, n_seeds)
+
+    def tone(r: dict) -> str:
+        if r.get("safety_violation"):
+            return "viol"
+        if r.get("passed"):
+            return "pass"
+        return "fail"
+
+    rows_html = []
+    for r in results:
+        rows_html.append(
+            "<tr class='{cls}'>"
+            "<td>{case}</td><td>{mut}</td><td>{orig}</td><td>{new}</td>"
+            "<td>{reason}</td><td>{ok}</td><td>{safe}</td><td>{notes}</td>"
+            "</tr>".format(
+                cls=tone(r),
+                case=html.escape(r.get("case_id") or ""),
+                mut=html.escape(r.get("mutation") or ""),
+                orig=html.escape(r.get("original_decision") or ""),
+                new=html.escape(r.get("mutated_decision") or ""),
+                reason=html.escape(r.get("mutated_reason_code") or ""),
+                ok="PASS" if r.get("passed") else "FAIL",
+                safe="VIOLATION" if r.get("safety_violation") else "ok",
+                notes=html.escape((r.get("notes") or "")[:180]),
+            )
+        )
+
+    by_mut: Dict[str, List[dict]] = {}
+    for r in results:
+        by_mut.setdefault(r["mutation"], []).append(r)
+    mut_cards = []
+    for name in MUTATION_ORDER:
+        if name not in by_mut:
+            continue
+        group = by_mut[name]
+        gpass = sum(1 for r in group if r.get("passed"))
+        gviol = sum(1 for r in group if r.get("safety_violation"))
+        mut_cards.append(
+            f"<div class='card'><h3>{html.escape(name)}</h3>"
+            f"<p>{gpass}/{len(group)} passed · {gviol} safety violations</p></div>"
+        )
+
+    doc = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>{html.escape(title)}</title>
+<style>
+  :root {{ --bg:#f6f4ef; --ink:#1c1917; --muted:#78716c; --line:#d6d3d1;
+           --pass:#166534; --passbg:#dcfce7; --fail:#9a3412; --failbg:#ffedd5;
+           --viol:#991b1b; --violbg:#fee2e2; --accent:#0f766e; }}
+  * {{ box-sizing:border-box; }}
+  body {{ margin:0; font:15px/1.45 "IBM Plex Sans", "Source Sans 3", system-ui, sans-serif;
+         color:var(--ink); background:var(--bg); }}
+  header {{ padding:28px 32px 18px; border-bottom:1px solid var(--line); background:#fff; }}
+  h1 {{ margin:0 0 6px; font-size:28px; letter-spacing:-0.02em; }}
+  .sub {{ color:var(--muted); max-width:70ch; }}
+  .headline {{ margin-top:14px; padding:12px 14px; background:#ecfdf5; border-left:4px solid var(--accent);
+              font-weight:600; }}
+  main {{ padding:24px 32px 48px; }}
+  .stats {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin:18px 0 28px; }}
+  .stat {{ background:#fff; border:1px solid var(--line); padding:14px 16px; }}
+  .stat b {{ display:block; font-size:26px; }}
+  .stat span {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0.04em; }}
+  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; margin-bottom:28px; }}
+  .card {{ background:#fff; border:1px solid var(--line); padding:12px 14px; }}
+  .card h3 {{ margin:0 0 4px; font-size:14px; }}
+  .card p {{ margin:0; color:var(--muted); font-size:13px; }}
+  table {{ width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); }}
+  th, td {{ text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; font-size:13px; }}
+  th {{ background:#fafaf9; color:var(--muted); font-weight:600; }}
+  tr.pass td:nth-child(6) {{ color:var(--pass); font-weight:600; }}
+  tr.fail {{ background:var(--failbg); }}
+  tr.viol {{ background:var(--violbg); }}
+  tr.viol td:nth-child(7) {{ color:var(--viol); font-weight:700; }}
+  footer {{ padding:0 32px 40px; color:var(--muted); font-size:12px; }}
+</style>
+</head>
+<body>
+<header>
+  <h1>{html.escape(title)}</h1>
+  <p class="sub">Black-box test-to-fail: copy data → apply one mutation → run <code>system/run</code> →
+  compare original vs mutated decision. Expected outcomes never enter the engine.
+  Metrics below are computed from this run only.</p>
+  <div class="headline">{html.escape(line)}</div>
+</header>
+<main>
+  <div class="stats">
+    <div class="stat"><b>{len(results)}</b><span>mutations</span></div>
+    <div class="stat"><b>{n_seeds}</b><span>true-match seeds</span></div>
+    <div class="stat"><b>{passed}/{len(results)}</b><span>passed</span></div>
+    <div class="stat"><b>{len(viols)}</b><span>safety violations</span></div>
+    <div class="stat"><b>{wrongful}</b><span>wrongful clears</span></div>
+    <div class="stat"><b>{stayed}/{review}/{diff}</b><span>SAME / REVIEW / DIFF</span></div>
+  </div>
+  <h2>Mutations</h2>
+  <div class="grid">{''.join(mut_cards)}</div>
+  <h2>Case results</h2>
+  <table>
+    <thead><tr>
+      <th>Case</th><th>Mutation</th><th>Original</th><th>Mutated</th>
+      <th>Reason</th><th>Expect</th><th>Safety</th><th>Notes</th>
+    </tr></thead>
+    <tbody>
+      {''.join(rows_html)}
+    </tbody>
+  </table>
+</main>
+<footer>
+  Failures: {len(fails)} · Safety violations: {len(viols)} · Generated by harness/mutate.py
+</footer>
+</body>
+</html>
+"""
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(doc)
+
+
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="ClearGuard mutation harness (test-to-fail)")
     p.add_argument("--data", required=True, help="Official data folder (not copied into repo)")
     p.add_argument("--out", required=True, help="JSON report path")
+    p.add_argument("--html", default=None, help="Optional HTML report path for the live demo")
     p.add_argument("--seeds", choices=("practice", "full"), default="practice")
     p.add_argument(
         "--mutations",
@@ -903,6 +1134,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Comma-separated mutation names, or 'all'",
     )
     p.add_argument("--limit", type=int, default=0, help="Max seed×mutation cases (0 = no limit)")
+    p.add_argument("--hit-ids", default=None, help="Comma-separated hit_id filter (demo showcase)")
     p.add_argument("--keep-work", action="store_true", help="Keep per-case engine outputs under harness root")
     return p.parse_args(argv)
 
@@ -930,6 +1162,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         seeds = load_practice_same(data_dir)
     else:
         seeds = load_full_same(data_dir, baseline)
+    if args.hit_ids:
+        want = {h.strip() for h in args.hit_ids.split(",") if h.strip()}
+        seeds = [s for s in seeds if s["hit_id"] in want]
     print(f"seeds: {len(seeds)} SAME_ENTITY ({args.seeds})", flush=True)
 
     if args.mutations.strip().lower() == "all":
@@ -967,24 +1202,37 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Report
     out_path = os.path.abspath(args.out)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    summary = {
+        "headline": headline(results, len(seeds)),
+        "n_seeds": len(seeds),
+        "n_cases": len(results),
+        "passed": sum(1 for r in results if r.get("passed")),
+        "failures": sum(1 for r in results if not r.get("passed")),
+        "safety_violations": sum(1 for r in results if r.get("safety_violation")),
+        "stayed_SAME": sum(1 for r in results if r["mutated_decision"] == "SAME_ENTITY"),
+        "moved_to_REVIEW": sum(1 for r in results if r["mutated_decision"] == "REVIEW"),
+        "became_DIFFERENT": sum(1 for r in results if r["mutated_decision"] == "DIFFERENT_ENTITY"),
+        "mutations": mutations,
+    }
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
+        json.dump({"summary": summary, "results": results}, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
     print()
     print_table(results)
     print()
-    line = headline(results, len(seeds))
-    print(line)
-    fails = [r for r in results if not r["passed"]]
-    viols = [r for r in results if r["safety_violation"]]
-    print(f"failures: {len(fails)}  safety_violations: {len(viols)}")
+    print(summary["headline"])
+    print(f"failures: {summary['failures']}  safety_violations: {summary['safety_violations']}")
     print(f"report: {out_path}")
+    if args.html:
+        html_path = os.path.abspath(args.html)
+        write_html_report(results, len(seeds), html_path)
+        print(f"html: {html_path}")
     if not args.keep_work:
         shutil.rmtree(work_root, ignore_errors=True)
     else:
         print(f"work kept at: {work_root}")
-    return 0 if not viols else 1
+    return 0 if not summary["safety_violations"] else 1
 
 
 if __name__ == "__main__":
