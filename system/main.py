@@ -18,14 +18,18 @@ def run(data_dir, out_path, debug=False):
         try:
             r = decide_hit(ix, alert, h)
         except Exception as e:  # never drop a hit: fall back to the safe decision
+            from decide import make_trace
+            reason = (f"The hit could not be processed automatically ({type(e).__name__}), so a person "
+                      f"must review it.")
             r = {"decision": "REVIEW", "reason_code": "INSUFFICIENT_DATA", "customer_record_id": None,
-                 "reason": f"The hit could not be processed automatically ({type(e).__name__}), so a person "
-                           f"must review it.", "evidence": [], "path": []}
+                 "reason": reason, "evidence": [], "path": [],
+                 "trace": make_trace("INSUFFICIENT_DATA", [reason], [])}
         row = {"hit_id": h.get("hit_id"), "alert_id": h.get("alert_id"), "decision": r["decision"],
                "reason_code": r["reason_code"], "customer_record_id": r["customer_record_id"],
                "reason": r["reason"], "evidence": r["evidence"]}
         if debug:
             row["path"] = r.get("path")
+            row["trace"] = r.get("trace")
         lines.append(row)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
