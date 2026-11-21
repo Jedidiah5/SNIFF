@@ -459,6 +459,109 @@ class SopRuleTests(unittest.TestCase):
         self.assertEqual(row["decision"], "REVIEW")
         self.assertEqual(row["reason_code"], "INSUFFICIENT_DATA")
 
+    # ------------------------------------------------------------------
+    # Part 1 safety fixes
+    # ------------------------------------------------------------------
+    def test_failed_kyc_note_yields_no_identity(self):
+        # POLICY principle 4: rejected/failed notes are not evidence.
+        from decide import parse_kyc_note
+        from engine import Names
+
+        text = ("Sumsub could not verify JOHN SMITH on 2024-02-01; "
+                "the passport showed DOB 1962-03-12 but failed liveness.")
+        note = {
+            "note_id": "NOTE-FAIL", "channel": "kyc", "created_at": "2024-02-01",
+            "text": text, "requester_email": "jane@example.com",
+        }
+        names = Names([], [])
+        out = parse_kyc_note(note, names, ["John Smith"], providers={"sumsub"})
+        self.assertIsNone(out["name"])
+        self.assertIsNone(out["dob"])
+        self.assertIsNone(out["country"])
+        self.assertTrue(out.get("rejected"))
+
+        # End-to-end: failed note must not drive a DOB_MISMATCH clear.
+        cust = _person_customer(name="John Smith", dob=None)
+        cust["dob"] = None
+        alert = _alert(name="John Smith", dob=None)
+        alert["customer"]["dob"] = None
+        hit = {
+            "hit_id": "H-1", "alert_id": "A-1", "match_score": 90,
+            "entity_type": "Individual", "name": "John Smith", "aliases": ["John Smith"],
+            "dobs": ["1962-03-12"], "countries": ["United States"], "categories": ["PEP"],
+            "nationality": [], "citizenship": [], "addresses": [], "profile_notes": None,
+        }
+        _mini(self.folder, alerts=[alert], hits=[hit], customers=[cust],
+              accounts=[_account()], onboarding=[_onboard()],
+              notes=[{
+                  "note_id": "NOTE-FAIL", "channel": "kyc", "created_at": "2024-02-02",
+                  "requester_email": "jane@example.com", "text": text,
+              }])
+        row = _run(self.folder)
+        self.assertNotEqual(row["reason_code"], "DOB_MISMATCH")
+        self.assertEqual(row["decision"], "REVIEW")
+
+    def test_ambiguous_numeric_dob_cannot_clear(self):
+        # 03/04/1965 is ambiguous (3 Apr vs 4 Mar). Hit 1965-03-04 matches one
+        # reading, so DOB_MISMATCH must not clear.
+        cust = _person_customer(dob="03/04/1965")
+        alert = _alert(dob="03/04/1965")
+        hit = {
+            "hit_id": "H-1", "alert_id": "A-1", "match_score": 90,
+            "entity_type": "Individual", "name": "Jane Doe", "aliases": ["Jane Doe"],
+            "dobs": ["1965-03-04"], "countries": ["United States"], "categories": ["PEP"],
+            "nationality": [], "citizenship": [], "addresses": [], "profile_notes": None,
+        }
+        k = _kyc(dob="03/04/1965")
+        _mini(self.folder, alerts=[alert], hits=[hit], customers=[cust],
+              accounts=[_account()], onboarding=[_onboard()], kyc=[k])
+        row = _run(self.folder)
+        self.assertNotEqual(row["decision"], "DIFFERENT_ENTITY")
+        self.assertNotEqual(row["reason_code"], "DOB_MISMATCH")
+
+        # Year gaps > 1 remain a clear (ambiguity rule does not apply).
+        hit2 = dict(hit)
+        hit2["dobs"] = ["1962-09-10"]
+        _mini(self.folder, alerts=[alert], hits=[hit2], customers=[cust],
+              accounts=[_account()], onboarding=[_onboard()], kyc=[k])
+        row2 = _run(self.folder)
+        self.assertEqual(row2["decision"], "DIFFERENT_ENTITY")
+        self.assertEqual(row2["reason_code"], "DOB_MISMATCH")
+
+    def test_utf8_bom_blank_and_malformed_io(self):
+        # Robust I/O: BOM, blank lines, malformed JSON must not crash; one line per hit.
+        from pathlib import Path
+        folder = Path(self.folder)
+        cust = _person_customer()
+        alert = _alert()
+        hit = {
+            "hit_id": "H-1", "alert_id": "A-1", "match_score": 90,
+            "entity_type": "Individual", "name": "Jane Doe", "aliases": ["Jane Doe"],
+            "dobs": ["1990-01-15"], "countries": ["United States"], "categories": ["PEP"],
+            "nationality": [], "citizenship": [], "addresses": [], "profile_notes": None,
+        }
+        hit2 = dict(hit)
+        hit2["hit_id"] = "H-2"
+        _mini(self.folder, alerts=[alert], hits=[hit, hit2], customers=[cust],
+              accounts=[_account()], onboarding=[_onboard()], kyc=[_kyc()])
+
+        # Rewrite hits.jsonl with BOM, blank line, and one malformed line.
+        hits_path = folder / "hits.jsonl"
+        payload = (
+            "\ufeff" + json.dumps(hit) + "\n"
+            + "\n"
+            + "{not-json\n"
+            + json.dumps(hit2) + "\n"
+        )
+        hits_path.write_text(payload, encoding="utf-8")
+
+        out = folder / "out.jsonl"
+        from main import run
+        run(str(folder), str(out))
+        rows = [json.loads(l) for l in out.read_text(encoding="utf-8").splitlines() if l.strip()]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r["hit_id"] for r in rows}, {"H-1", "H-2"})
+
 
 if __name__ == "__main__":
     unittest.main()

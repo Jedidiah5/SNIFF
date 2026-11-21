@@ -4,7 +4,8 @@ from collections import defaultdict
 
 from engine import (as_list, parse_date, dates_in_text, fmt_date, full_date, to_pydate, norm_country,
                     countries_in_text, strip_accents, MONTHS, LISTING_PHRASES, OTHER_LISTING,
-                    PLACEHOLDERS, KNOWN_COUNTRIES, COUNTRY_ALIASES, DATE_IN_TEXT)
+                    PLACEHOLDERS, KNOWN_COUNTRIES, COUNTRY_ALIASES, DATE_IN_TEXT,
+                    dob_interpretation_alts)
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +198,30 @@ TITLE_NAME = re.compile(
 )
 NOT_NAME = {"DOB", "ID", "KYC", "PEP", "SOE", "UK", "US", "USA", "UAE", "EU"}
 BIRTH_TOKEN = re.compile(r"(?i)\bborn\b|\bbirth\b|\bd\.?o\.?b\.?\b|\bdate of birth\b")
+
+# SOP principle 4: rejected / failed / pending KYC notes are not identity evidence.
+_FAILED_KYC_NOTE_RE = re.compile(
+    r"(?i)(?:"
+    r"\bnot approved\b|"
+    r"\brejected\b|"
+    r"\bdeclined\b|"
+    r"\bfailed\b|"
+    r"\bunsuccessful\b|"
+    r"\bcould not\b|"
+    r"\bcouldn't\b|"
+    r"\bunable to\b|"
+    r"\bdid not pass\b|"
+    r"\bdidn't pass\b|"
+    r"\bexpired\b|"
+    r"\bpending\b|"
+    r"\bunder review\b|"
+    r"\brefused\b|"
+    r"\binvalid\b|"
+    r"\bmismatch\b|"
+    r"\bsuperseded\b|"
+    r"\brevoked\b"
+    r")"
+)
 WEEKDAYS = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
 DEFAULT_PROVIDERS = {"veriff", "onfido", "sumsub", "persona", "jumio", "companies registry lookup"}
 
@@ -278,10 +303,24 @@ def _pick_trusted_name(cands, names_obj, anchors, blocklist):
 def parse_kyc_note(note, names_obj, anchors, providers=None):
     """Extract verified name/DOB from a KYC note (SOP principles 4 and 8).
 
+    Rejected / failed / pending notes yield no identity fields (principle 4).
     A failed name check only suppresses the note name. It does not mark the DOB unusual.
     """
     text = note.get("text") or ""
     created = parse_date(note.get("created_at"))
+    empty = {
+        "name": None, "dob": None, "dob_raw": None, "country": None,
+        "date": created, "id": note.get("note_id"), "source": "note",
+        "unusual": False, "dob_keyword_anchored": False,
+        "dob_keyword_before": False, "dob_keyword_after_only": False,
+        "name_from_title_case": False, "name_check_failed": False,
+        "rejected": False,
+    }
+    # Principle 4: status applies before any identity extraction.
+    if _FAILED_KYC_NOTE_RE.search(text):
+        empty["rejected"] = True
+        return empty
+
     blocklist = _name_blocklist(providers)
 
     # Prefer ALL-CAPS verified names; Title Case only when no CAPS candidate exists.
@@ -341,13 +380,21 @@ def parse_kyc_note(note, names_obj, anchors, providers=None):
     # Name failure must not poison the DOB (principle 4: verified DOB is still verified).
     unusual = bool(dob is not None and not dob_keyword_anchored and len(non_created) > 1)
     countries = countries_in_text(text)
-    return {"name": name, "dob": dob, "country": countries[0] if countries else None,
+    dob_raw = None
+    if dob is not None:
+        for start, end, raw, d in dated:
+            if d == dob:
+                dob_raw = raw
+                break
+    return {"name": name, "dob": dob, "dob_raw": dob_raw,
+            "country": countries[0] if countries else None,
             "date": created, "id": note.get("note_id"), "source": "note",
             "unusual": unusual, "dob_keyword_anchored": dob_keyword_anchored,
             "dob_keyword_before": dob_keyword_before,
             "dob_keyword_after_only": dob_keyword_after_only,
             "name_from_title_case": name_from_title_case,
-            "name_check_failed": name_check_failed}
+            "name_check_failed": name_check_failed,
+            "rejected": False}
 
 
 def customer_facts(ix, person, alert=None):
@@ -365,7 +412,9 @@ def customer_facts(ix, person, alert=None):
         for k in ix.kyc_checks(rid):
             if (k.get("result") or "").lower() != "approved":
                 continue
-            verified.append({"name": k.get("verified_name"), "dob": parse_date(k.get("verified_dob")),
+            verified.append({"name": k.get("verified_name"),
+                             "dob": parse_date(k.get("verified_dob")),
+                             "dob_raw": k.get("verified_dob"),
                              "country": norm_country(k.get("document_country")),
                              "date": parse_date(k.get("checked_at")), "id": k.get("check_id"), "source": "kyc",
                              "unusual": False, "name_from_title_case": False,
@@ -387,12 +436,21 @@ def customer_facts(ix, person, alert=None):
     verified.sort(key=lambda v: (v["date"] or (0, 0, 0), v["source"] == "kyc", v["id"] or ""))
     latest = verified[-1] if verified else None
     rec_dobs = [ix.cust_dob.get(r) for r in person if ix.cust_dob.get(r)]
+    dob_raw = None
     if latest and latest["dob"]:
         dob, dob_src = latest["dob"], latest["id"]
+        dob_raw = latest.get("dob_raw")
     elif rec_dobs:
-        dob, dob_src = rec_dobs[0], person[0]
+        dob = rec_dobs[0]
+        dob_src, dob_raw = person[0], None
+        for r in person:
+            if ix.cust_dob.get(r) == dob:
+                dob_src = r
+                dob_raw = ix.cust.get(r, {}).get("dob")
+                break
     else:
         dob, dob_src = None, None
+    dob_alts = dob_interpretation_alts(dob_raw, dob)
     countries = {}
     for c in recs:
         for f in ("residence_country", "nationality"):
@@ -419,6 +477,7 @@ def customer_facts(ix, person, alert=None):
         "records": person, "company": company, "verified": latest,
         "verified_name": latest["name"] if latest else None,
         "record_names": names, "dob": dob, "dob_src": dob_src,
+        "dob_alts": dob_alts, "dob_raw": dob_raw,
         "countries": countries, "entity_type": "Company" if company else "Individual",
         "note_unusual": note_unusual, "dob_from_note": dob_from_note, "name_from_note": name_from_note,
         "name_from_title_case": name_from_title_case, "note_name_failed": note_name_failed,
@@ -739,8 +798,16 @@ def decide_person(ix, alert, h, cf):
 
     # Date of birth
     cands, dsrc, dev, hit_dob_fragile = hit_dobs(ix, h)
-    dob_agree = any(dob_agrees(cd, c) for c in cands) if cands and cd else False
-    dob_contra = bool(cands) and cd is not None and all(dob_contradicts(cd, c) for c in cands)
+    # Ambiguous numeric customer DOBs (e.g. 03/04/1965): agreement if ANY reading
+    # agrees; clearance only if EVERY reading contradicts every hit candidate.
+    dob_alts = cf.get("dob_alts") or ([cd] if cd else [])
+    dob_agree = (
+        any(dob_agrees(alt, c) for alt in dob_alts for c in cands)
+        if cands and dob_alts else False
+    )
+    dob_contra = bool(cands) and bool(dob_alts) and all(
+        all(dob_contradicts(alt, c) for c in cands) for alt in dob_alts
+    )
     if h_company and not cf["company"]:
         dob_agree = dob_contra = False
     if dob_contra:

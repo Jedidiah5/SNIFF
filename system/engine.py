@@ -6,6 +6,7 @@ follows the screening SOP (POLICY.md). No randomness, no network calls by defaul
 import json
 import os
 import re
+import sys
 import unicodedata
 from datetime import date
 
@@ -260,6 +261,7 @@ def parse_date(s):
         if b > 12 and a <= 12:
             a, b = b, a
         return (int(m[3]), b, a)
+    # fall through for remaining free-text forms
     m = re.fullmatch(r"([A-Za-z]+)\.? (\d{1,2}),? (\d{4})", t)
     if m and m[1].lower() in MONTHS:
         return (int(m[3]), MONTHS[m[1].lower()], int(m[2]))
@@ -277,6 +279,39 @@ def parse_date(s):
     if m and m[1].lower() in MONTHS:
         return (int(m[2]), MONTHS[m[1].lower()], None)
     return None
+
+
+def ambiguous_numeric_dob_alts(s):
+    """Return both DMY and MDY readings when a numeric DOB is ambiguous.
+
+    A value like ``03/04/1965`` can be 3 Apr or 4 Mar. When both the first and
+    second numbers are ≤ 12 and they differ, return both interpretations so a
+    DOB_MISMATCH clear requires contradiction under every reading. Unambiguous
+    forms (ISO, month name, or one part > 12) return None.
+    """
+    if s is None or isinstance(s, (int, float)):
+        return None
+    t = str(s).strip().strip(".")
+    m = re.fullmatch(r"(\d{1,2})[/.](\d{1,2})[/.](\d{4})", t)
+    if not m:
+        return None
+    a, b, y = int(m[1]), int(m[2]), int(m[3])
+    if a < 1 or b < 1 or a > 31 or b > 31:
+        return None
+    if a > 12 or b > 12:
+        return None  # only one calendar reading is possible
+    if a == b:
+        return [(y, a, a)]
+    # DMY (engine default) and MDY (US-style alternative)
+    return [(y, b, a), (y, a, b)]
+
+
+def dob_interpretation_alts(raw, parsed):
+    """Customer DOB interpretations used for contradiction checks."""
+    alts = ambiguous_numeric_dob_alts(raw)
+    if alts:
+        return alts
+    return [parsed] if parsed else []
 
 
 DATE_IN_TEXT = re.compile(
@@ -428,12 +463,27 @@ class Names:
 # Data loading
 # ---------------------------------------------------------------------------
 def _read_jsonl(path):
+    """Load JSONL: UTF-8 with BOM, skip blanks, skip malformed lines (warn)."""
     rows = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
+    malformed = 0
+    with open(path, encoding="utf-8-sig") as f:
+        for lineno, line in enumerate(f, 1):
             line = line.strip()
-            if line:
+            if not line:
+                continue
+            try:
                 rows.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                malformed += 1
+                print(
+                    f"warning: skip malformed JSON in {path}:{lineno}: {exc}",
+                    file=sys.stderr,
+                )
+    if malformed:
+        print(
+            f"warning: skipped {malformed} malformed line(s) in {path}",
+            file=sys.stderr,
+        )
     return rows
 
 
