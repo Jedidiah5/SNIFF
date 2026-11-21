@@ -132,7 +132,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 :root{
   --bg:#FFFFFF; --paper:#F6F6F6; --tint:#EEEEEE; --line:#E4E4E4;
   --accent:#111111; --accent2:#2A2A2A; --deep:#000000; --ink:#111111; --muted:#6B6B6B;
-  --clear:#13A45C; --match:#E5484D; --review:#F2A30F;
+  --clear:#111111; --match:#555555; --review:#9A9A9A;
   --shadow:0 1px 2px rgba(0,0,0,.06),0 12px 32px -12px rgba(0,0,0,.18);
   --spring:cubic-bezier(.2,.9,.25,1.15);
 }
@@ -151,7 +151,7 @@ h1{font-size:46px;line-height:1.05;margin:18px 0 12px;letter-spacing:-.02em}
 h1 em{font-style:normal;color:var(--deep)}
 .sub{color:var(--muted);font-size:17px;max-width:560px}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:13px;color:var(--muted);margin-top:18px}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--clear);box-shadow:0 0 0 4px rgba(19,164,92,.15)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(0,0,0,.08)}
 /* 3D scene */
 .scene{height:330px;perspective:1100px;display:grid;place-items:center}
 .stack{position:relative;width:340px;height:300px;transform-style:preserve-3d;transform:rotateX(14deg) rotateY(-22deg);transition:transform .25s ease-out}
@@ -165,9 +165,9 @@ h1 em{font-style:normal;color:var(--deep)}
 .c3{transform:translate3d(100px,168px,60px);background:linear-gradient(140deg,#fff 0%,#F3F3F3 100%);border-color:#CCCCCC;animation-delay:-3s}
 @keyframes bob{0%,100%{translate:0 0}50%{translate:0 -10px}}
 .badge{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:12px;padding:5px 10px;border-radius:999px;letter-spacing:.02em}
-.b-DIFFERENT_ENTITY{background:rgba(19,164,92,.12);color:var(--clear)}
-.b-SAME_ENTITY{background:rgba(229,72,77,.12);color:var(--match)}
-.b-REVIEW{background:rgba(242,163,15,.16);color:#B97800}
+.b-DIFFERENT_ENTITY{background:#111;color:#fff}
+.b-SAME_ENTITY{background:#E8E8E8;color:#111}
+.b-REVIEW{background:#fff;color:#555;border:1px solid #CCC}
 /* stats */
 .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin:-28px auto 8px;position:relative;z-index:2}
 .stat{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:var(--shadow);transform-style:preserve-3d;transition:transform .2s ease-out}
@@ -220,8 +220,8 @@ h1 em{font-style:normal;color:var(--deep)}
 .quote{border-left:3px solid var(--accent);padding:4px 0 4px 10px;color:#2a2a2a;font-size:13px;font-style:italic}
 .code{display:inline-block;margin-top:8px;font-weight:700;color:var(--deep)}
 .verdict{font-size:22px;font-weight:900;letter-spacing:-.01em;margin:6px 0}
-.v-DIFFERENT_ENTITY{color:var(--clear)} .v-SAME_ENTITY{color:var(--match)} .v-REVIEW{color:#C48100}
-.guard{margin-top:8px;font-size:12px;color:#9A5B00;background:#FFF4D6;border:1px solid #F6DA92;border-radius:10px;padding:6px 8px}
+.v-DIFFERENT_ENTITY{color:var(--clear)} .v-SAME_ENTITY{color:var(--match)} .v-REVIEW{color:#666}
+.guard{margin-top:8px;font-size:12px;color:#333;background:#F0F0F0;border:1px solid #DDD;border-radius:10px;padding:6px 8px}
 .facts{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:var(--shadow)}
 .facts h4{margin:0 0 8px;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .facts p{margin:6px 0}
@@ -236,7 +236,7 @@ h1 em{font-style:normal;color:var(--deep)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--muted);font-weight:600;padding:8px;border-bottom:1px solid var(--line)}
 td{padding:7px 8px;border-bottom:1px solid #F0F0F0}
-.ok{color:var(--clear);font-weight:700} .bad{color:var(--match);font-weight:700}
+.ok{color:var(--accent);font-weight:700} .bad{color:#555;font-weight:700}
 .tbl{max-height:360px;overflow:auto}
 footer{border-top:1px solid var(--line);background:var(--paper);color:var(--muted);font-size:13px;padding:22px 0;margin-top:20px}
 .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s var(--spring)}
@@ -380,8 +380,8 @@ if (D.harness) {
       <div class="hcard tilt"><div class="k" style="color:var(--muted);font-size:12px;letter-spacing:.12em;text-transform:uppercase">Unsafe clears</div>
         <div class="big" id="bigzero">${H.unsafe}</div>
         <div style="font-weight:700;margin-top:6px">${H.cases} mutations from ${H.seeds} true matches</div>
-        <div class="bar"><div id="b1" style="background:var(--accent)"></div><div id="b2" style="background:var(--review)"></div><div id="b3" style="background:var(--clear)"></div></div>
-        <div class="legend"><span><i style="background:var(--accent)"></i>${H.same} still caught as a match</span><span><i style="background:var(--review)"></i>${H.review} moved to review</span><span><i style="background:var(--clear)"></i>${H.different} became cleared</span></div>
+        <div class="bar"><div id="b1" style="background:#111"></div><div id="b2" style="background:#888"></div><div id="b3" style="background:#CCC"></div></div>
+        <div class="legend"><span><i style="background:#111"></i>${H.same} still caught as a match</span><span><i style="background:#888"></i>${H.review} moved to review</span><span><i style="background:#CCC"></i>${H.different} became cleared</span></div>
         <p style="color:var(--muted);font-size:13px;margin-top:12px">Mutations include name variants, hidden dates of birth, look-alike customers, rejected ID checks, duplicate records and cut account links.</p>
       </div>
       <div class="hcard"><div class="tbl"><table><thead><tr><th>Hit</th><th>Trick</th><th>Before</th><th>After</th><th>Safety</th></tr></thead><tbody>${rows}</tbody></table></div></div>
