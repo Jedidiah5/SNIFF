@@ -31,5 +31,5 @@ system/run <data folder> <output file>
 - [`tests/`](tests/) — 17 SOP rule tests
 - [`harness/`](harness/) — test-to-fail mutation harness
 - [`baseline/`](baseline/) — name-only foil baseline
-- [`integrations/`](integrations/) — optional Tavily / Supabase adapters (dormant; not used by screening)
+- `integrations/`: optional Tavily live-search demo (`python -m integrations.tavily.demo`) showing SNIFF's principle-5 filter on real web results; not part of the scored run.
 - `console/trace.py`: generates a static policy-trace page from `--debug` output (open the HTML locally; it is gitignored because it contains dev data).
