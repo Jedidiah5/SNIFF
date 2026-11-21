@@ -13,3 +13,8 @@ __pycache__/
 MEGAPLAN.md
 PLAN_A_ENGINE.md
 PLAN_B_PROOF.md
+HANDOFF_NUMBERS.md
+_mutate_freetext.py
+_spotcheck.py
+output/debug.jsonl
+output/_spot.json

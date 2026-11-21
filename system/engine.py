@@ -266,6 +266,13 @@ def parse_date(s):
     m = re.fullmatch(r"(\d{1,2}) ([A-Za-z]+)\.?,? (\d{4})", t)
     if m and m[2].lower() in MONTHS:
         return (int(m[3]), MONTHS[m[2].lower()], int(m[1]))
+    # Ordinal free-text: "5th March 1968" / "the 5th of March 1968"
+    m = re.fullmatch(r"(?:the )?(\d{1,2})(?:st|nd|rd|th) ([A-Za-z]+)\.?,? (\d{4})", t, re.I)
+    if m and m[2].lower() in MONTHS:
+        return (int(m[3]), MONTHS[m[2].lower()], int(m[1]))
+    m = re.fullmatch(r"(?:the )?(\d{1,2})(?:st|nd|rd|th) of ([A-Za-z]+)\.?,? (\d{4})", t, re.I)
+    if m and m[2].lower() in MONTHS:
+        return (int(m[3]), MONTHS[m[2].lower()], int(m[1]))
     m = re.fullmatch(r"([A-Za-z]+)\.? (\d{4})", t)
     if m and m[1].lower() in MONTHS:
         return (int(m[2]), MONTHS[m[1].lower()], None)
@@ -275,7 +282,9 @@ def parse_date(s):
 DATE_IN_TEXT = re.compile(
     r"(\d{4}-\d{1,2}-\d{1,2})|(\d{1,2}/\d{1,2}/\d{4})|"
     r"((?:January|February|March|April|May|June|July|August|September|October|November|December)\.? \d{1,2},? \d{4})|"
-    r"(\d{1,2} (?:January|February|March|April|May|June|July|August|September|October|November|December),? \d{4})",
+    r"(\d{1,2} (?:January|February|March|April|May|June|July|August|September|October|November|December),? \d{4})|"
+    r"((?:the )?\d{1,2}(?:st|nd|rd|th) of (?:January|February|March|April|May|June|July|August|September|October|November|December)\.?,? \d{4})|"
+    r"((?:the )?\d{1,2}(?:st|nd|rd|th) (?:January|February|March|April|May|June|July|August|September|October|November|December)\.?,? \d{4})",
     re.I)
 
 
