@@ -3,7 +3,8 @@ import re
 from collections import defaultdict
 
 from engine import (as_list, parse_date, dates_in_text, fmt_date, full_date, to_pydate, norm_country,
-                    countries_in_text, strip_accents, MONTHS, LISTING_PHRASES, OTHER_LISTING)
+                    countries_in_text, strip_accents, MONTHS, LISTING_PHRASES, OTHER_LISTING,
+                    PLACEHOLDERS, KNOWN_COUNTRIES, COUNTRY_ALIASES, DATE_IN_TEXT)
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +55,8 @@ class Index:
         self.search_by_query = defaultdict(list)
         for s in data["search"]:
             self.search_by_query[self._qkey(s.get("query"))].append(s)
+        self.providers = {str(k.get("provider") or "").strip().lower()
+                          for k in data["kyc"] if k.get("provider")}
         # document number -> customers (approved checks only)
         self.cust_by_doc = defaultdict(set)
         self.docs_by_cust = defaultdict(set)
@@ -189,39 +192,148 @@ def group_persons(ix, seeds):
 # Customer facts
 # ---------------------------------------------------------------------------
 CAPS_NAME = re.compile(r"\b([A-ZÀ-ÖØ-Þ][A-ZÀ-ÖØ-Þ'\-]+(?:\s+[A-ZÀ-ÖØ-Þ][A-ZÀ-ÖØ-Þ'\-]+)*)\b")
+TITLE_NAME = re.compile(
+    r"\b([A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'\-]+(?:\s+[A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ'\-]+)+)\b"
+)
 NOT_NAME = {"DOB", "ID", "KYC", "PEP", "SOE", "UK", "US", "USA", "UAE", "EU"}
+BIRTH_TOKEN = re.compile(r"(?i)\bborn\b|\bbirth\b|\bd\.?o\.?b\.?\b|\bdate of birth\b")
+WEEKDAYS = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+DEFAULT_PROVIDERS = {"veriff", "onfido", "sumsub", "persona", "jumio", "companies registry lookup"}
 
 
-def parse_kyc_note(note):
+def _name_blocklist(providers):
+    """Tokens that are never personal name parts (SOP principle 8 + providers/geo/time words)."""
+    blocked = set(PLACEHOLDERS) | set(MONTHS) | set(WEEKDAYS) | set(DEFAULT_PROVIDERS)
+    for p in providers or ():
+        for w in strip_accents(str(p)).lower().split():
+            if len(w) > 1:
+                blocked.add(w)
+    for c in KNOWN_COUNTRIES:
+        for w in strip_accents(c).lower().split():
+            if len(w) > 2:
+                blocked.add(w)
+    for alias in COUNTRY_ALIASES:
+        for w in alias.split():
+            if len(w) > 2:
+                blocked.add(w)
+    return blocked
+
+
+def _year_ok(d, created):
+    if d is None or d[0] is None:
+        return False
+    if d[0] < 1900:
+        return False
+    if created and d[0] > created[0]:
+        return False
+    return True
+
+
+def _birth_keyword_near(text, start, end, radius=40):
+    """True if born/birth/DOB/date of birth sits within ~40 chars on either side of the date."""
+    left = text[max(0, start - radius):start]
+    right = text[end:min(len(text), end + radius)]
+    return bool(BIRTH_TOKEN.search(left) or BIRTH_TOKEN.search(right))
+
+
+def _trust_note_name(cand, names_obj, anchors, blocklist):
+    """Return (name_or_None, failed). Failed name must not drive NAME_MISMATCH_VERIFIED."""
+    if not cand:
+        return None, False
+    parts = [p for p in names_obj.parts(cand, False) if p not in blocklist]
+    if len(parts) < 2:
+        return None, True
+    shared = False
+    for anchor in anchors:
+        ap = [p for p in names_obj.parts(anchor, False) if p not in blocklist]
+        for p in parts:
+            if any(names_obj.part_match(p, a) for a in ap):
+                shared = True
+                break
+        if shared:
+            break
+    if not shared:
+        return None, True
+    return cand, False
+
+
+def parse_kyc_note(note, names_obj, anchors, providers=None):
+    """Extract verified name/DOB from a KYC note (SOP principles 4 and 8).
+
+    A failed name check only suppresses the note name. It does not mark the DOB unusual.
+    """
     text = note.get("text") or ""
     created = parse_date(note.get("created_at"))
-    name = None
-    best = ""
+    blocklist = _name_blocklist(providers)
+
+    # Prefer ALL-CAPS verified names; Title Case only when no CAPS candidate exists.
+    caps_cands = []
     for m in CAPS_NAME.finditer(text):
-        words = [w for w in m.group(1).split() if w not in NOT_NAME]
-        cand = " ".join(words)
-        if len(cand) > len(best):
-            best = cand
-    name = best or None
-    dob = None
-    for raw, d in dates_in_text(text):
+        words = [w for w in m.group(1).split() if w.upper() not in NOT_NAME]
+        if words:
+            caps_cands.append(" ".join(words))
+    name, name_check_failed = None, False
+    if caps_cands:
+        best = max(caps_cands, key=len)
+        name, name_check_failed = _trust_note_name(best, names_obj, anchors, blocklist)
+    else:
+        title_cands = []
+        for m in TITLE_NAME.finditer(text):
+            words = [w for w in m.group(1).split() if w.upper() not in NOT_NAME]
+            if len(words) >= 2:
+                title_cands.append(" ".join(words))
+        if title_cands:
+            best = max(title_cands, key=len)
+            name, name_check_failed = _trust_note_name(best, names_obj, anchors, blocklist)
+
+    # DOB: keyword within ~40 chars either side; else single non-created_at date only.
+    dated = []
+    for m in DATE_IN_TEXT.finditer(text or ""):
+        d = parse_date(m.group(0))
+        if d:
+            dated.append((m.start(), m.end(), m.group(0), d))
+    non_created = []
+    seen = set()
+    for start, end, raw, d in dated:
         if created and d == created:
             continue
-        if re.fullmatch(r"\d{4}-\d{1,2}-\d{1,2}", raw) and created is None and dob is not None:
+        if d in seen:
             continue
-        dob = d if dob is None else dob
-    if dob is None:
-        ds = [d for _, d in dates_in_text(text)]
-        if len(ds) >= 2:
-            dob = min(ds)
+        seen.add(d)
+        non_created.append((start, end, raw, d))
+
+    dob, dob_keyword_anchored = None, False
+    for start, end, raw, d in dated:
+        if created and d == created:
+            continue
+        if not _year_ok(d, created):
+            continue
+        if _birth_keyword_near(text, start, end):
+            dob, dob_keyword_anchored = d, True
+            break
+    if dob is None and len(non_created) == 1 and _year_ok(non_created[0][3], created):
+        dob, dob_keyword_anchored = non_created[0][3], False
+
+    # Unusual DOB only: no keyword on either side AND more than one non-created_at date.
+    # Name failure must not poison the DOB (principle 4: verified DOB is still verified).
+    unusual = bool(dob is not None and not dob_keyword_anchored and len(non_created) > 1)
     countries = countries_in_text(text)
     return {"name": name, "dob": dob, "country": countries[0] if countries else None,
-            "date": created, "id": note.get("note_id"), "source": "note"}
+            "date": created, "id": note.get("note_id"), "source": "note",
+            "unusual": unusual, "dob_keyword_anchored": dob_keyword_anchored,
+            "name_check_failed": name_check_failed}
 
 
-def customer_facts(ix, person):
+def customer_facts(ix, person, alert=None):
     """Facts for one person (list of record ids)."""
     recs = [ix.cust[r] for r in person]
+    anchors = []
+    for c in recs:
+        for f in ("full_name", "preferred_name"):
+            if c.get(f) and c[f] not in anchors:
+                anchors.append(c[f])
+    if alert and alert.get("customer_name"):
+        anchors.append(alert["customer_name"])
     verified = []
     for rid in person:
         for k in ix.kyc_checks(rid):
@@ -229,7 +341,8 @@ def customer_facts(ix, person):
                 continue
             verified.append({"name": k.get("verified_name"), "dob": parse_date(k.get("verified_dob")),
                              "country": norm_country(k.get("document_country")),
-                             "date": parse_date(k.get("checked_at")), "id": k.get("check_id"), "source": "kyc"})
+                             "date": parse_date(k.get("checked_at")), "id": k.get("check_id"), "source": "kyc",
+                             "unusual": False})
     notes_seen = set()
     lived = {}
     for rid in person:
@@ -238,7 +351,7 @@ def customer_facts(ix, person):
                 continue
             notes_seen.add(n.get("note_id"))
             if (n.get("channel") or "").lower() == "kyc":
-                v = parse_kyc_note(n)
+                v = parse_kyc_note(n, ix.names, anchors, ix.providers)
                 if v["name"] or v["dob"]:
                     verified.append(v)
             else:
@@ -269,11 +382,15 @@ def customer_facts(ix, person):
         for f in ("full_name", "preferred_name"):
             if c.get(f) and c[f] not in names:
                 names.append(c[f])
+    note_unusual = bool(latest and latest.get("source") == "note" and latest.get("unusual"))
+    dob_from_note = bool(latest and latest.get("source") == "note" and latest.get("dob") and dob_src == latest.get("id"))
+    name_from_note = bool(latest and latest.get("source") == "note" and latest.get("name"))
     return {
         "records": person, "company": company, "verified": latest,
         "verified_name": latest["name"] if latest else None,
         "record_names": names, "dob": dob, "dob_src": dob_src,
         "countries": countries, "entity_type": "Company" if company else "Individual",
+        "note_unusual": note_unusual, "dob_from_note": dob_from_note, "name_from_note": name_from_note,
     }
 
 
@@ -287,27 +404,41 @@ AGE_PATTERNS = [
     re.compile(r"\bage of (\d{1,3})\b", re.I),
     re.compile(r"\bat age (\d{1,3})\b", re.I),
     re.compile(r"\b(\d{1,3})[- ]years?[- ]old\b", re.I),
-    re.compile(r"\bwas (\d{1,3})\b", re.I),
+    # "was N" only with a clear age cue, or as the clause end after a dated event
+    # (SOP principle 5: "aged 45 when … in March 2019" / "… in January 2023, he was 46.").
+    re.compile(
+        r"\bwas (\d{1,3})\b(?:\s+years?\s+old|\s+at the time|\s+when|(?=\s*[.,;]|\s*$))",
+        re.I,
+    ),
     re.compile(r",\s*(\d{1,3})\s*,"),
     re.compile(r",\s*(\d{1,3})\s*(?:was|is|who|served|appeared|participated|gave|achieved|accepted|identified|a |an |the )", re.I),
 ]
 
 
 def age_years(text):
-    """An age at a dated time gives two possible birth years."""
-    age = None
+    """An age at a dated time gives two possible birth years (SOP principle 5).
+
+    If more than one candidate age or year appears, return nothing: a wrong DOB
+    can wrongly clear a hit, which the SOP says is the worst mistake.
+    """
+    ages = []
     for p in AGE_PATTERNS:
-        m = p.search(text)
-        if m and 0 < int(m.group(1)) < 120:
-            age = int(m.group(1))
-            break
-    my = MONTH_YEAR.search(text)
-    yr = int(my.group(2)) if my else None
-    if yr is None:
-        m = re.search(r"\b(19\d{2}|20\d{2})\b", text)
-        yr = int(m.group(1)) if m else None
-    if age is None or yr is None:
+        for m in p.finditer(text or ""):
+            a = int(m.group(1))
+            if 14 <= a <= 100 and a not in ages:
+                ages.append(a)
+    years = []
+    for my in MONTH_YEAR.finditer(text or ""):
+        y = int(my.group(2))
+        if y not in years:
+            years.append(y)
+    for m in re.finditer(r"\b(19\d{2}|20\d{2})\b", text or ""):
+        y = int(m.group(1))
+        if y not in years:
+            years.append(y)
+    if len(ages) != 1 or len(years) != 1:
         return None
+    age, yr = ages[0], years[0]
     return [yr - age - 1, yr - age]
 
 
@@ -357,14 +488,17 @@ def listing_phrase(h):
 
 
 def hit_dobs(ix, h):
-    """Return (candidates, source_label, evidence_ids). Each candidate: dict(years, month, day)."""
+    """Return (candidates, source_label, evidence_ids, from_profile_notes).
+
+    Each candidate: dict(years, month, day). from_profile_notes marks a fragile DOB.
+    """
     cands = []
     for v in as_list(h.get("dobs")):
         d = parse_date(v)
         if d:
             cands.append({"years": [d[0]], "month": d[1], "day": d[2], "text": fmt_date(d)})
     if cands:
-        return cands, "listed date of birth", []
+        return cands, "listed date of birth", [], False
     notes = (h.get("profile_notes") or "").strip()
     if notes:
         first = re.split(r"\n\s*\n", notes)[0].strip()
@@ -374,10 +508,11 @@ def hit_dobs(ix, h):
             if m:
                 d = parse_date(m.group(1).strip())
             if d:
-                return [{"years": [d[0]], "month": d[1], "day": d[2], "text": fmt_date(d)}], "profile notes", []
+                return [{"years": [d[0]], "month": d[1], "day": d[2], "text": fmt_date(d)}], "profile notes", [], True
             ys = age_years(first)
             if ys:
-                return [{"years": ys, "month": None, "day": None, "text": f"{ys[0]} or {ys[1]}"}], "profile notes", []
+                return [{"years": ys, "month": None, "day": None,
+                         "text": f"{ys[0]} or {ys[1]}"}], "profile notes", [], True
     # web search results: only those describing the same kind of listing in a country tied to the hit
     phrase = listing_phrase(h)
     hc = set(hit_countries(h))
@@ -393,8 +528,8 @@ def hit_dobs(ix, h):
             cands.append({"years": ys, "month": None, "day": None, "text": f"{ys[0]} or {ys[1]}"})
             ev.append(s.get("result_id"))
     if cands:
-        return cands, "search results", ev
-    return [], None, []
+        return cands, "search results", ev, False
+    return [], None, [], False
 
 
 def earliest_report(h):
@@ -455,39 +590,40 @@ def decide_person(ix, alert, h, cf):
     names = ix.names
     hn = [n for n in hit_names(h) if n]
     h_company = (h.get("entity_type") or "").lower().startswith("comp")
-    contra = []  # (code, sentence, evidence ids)
-    ev_base = []
+    # (code, sentence, evidence ids, fragile)
+    contra = []
 
     # Type
     if h_company != cf["company"]:
         contra.append(("ENTITY_TYPE_MISMATCH",
                        f"The customer is {'a company' if cf['company'] else 'a person'} but the hit is "
-                       f"{'a company' if h_company else 'a person'}.", list(cf["records"][:1])))
+                       f"{'a company' if h_company else 'a person'}.", list(cf["records"][:1]), False))
 
     # Deceased
     dd = parse_date(h.get("deceased_date"))
     screened = parse_date(alert.get("screened_at"))
     if dd and screened and (dd[0], dd[1] or 12, dd[2] or 28) < screened:
         contra.append(("DECEASED", f"The hit's profile gives a date of death of {fmt_date(dd)}, before the "
-                                   f"customer was screened on {fmt_date(screened)}.", []))
+                                   f"customer was screened on {fmt_date(screened)}.", [], False))
 
     cd, cd_src = cf["dob"], cf["dob_src"]
     # Temporal
     rep = earliest_report(h)
     if rep and cd:
+        fragile_t = bool(cf.get("dob_from_note"))
         if cf["company"]:
             if to_pydate(cd) and to_pydate(rep) and to_pydate(cd) > to_pydate(rep):
                 contra.append(("TEMPORAL_IMPOSSIBILITY",
                                f"The customer was incorporated on {fmt_date(cd)} ({cd_src}), after the hit's "
-                               f"profile reports activity on {fmt_date(rep)}.", [cd_src]))
+                               f"profile reports activity on {fmt_date(rep)}.", [cd_src], fragile_t))
         elif younger_than_16(cd, rep):
             contra.append(("TEMPORAL_IMPOSSIBILITY",
                            f"The customer was born in {cd[0]} ({cd_src}), so they were at most "
                            f"{max(0, rep[0] - cd[0])} when the hit's profile reports activity on {fmt_date(rep)}.",
-                           [cd_src]))
+                           [cd_src], fragile_t))
 
     # Date of birth
-    cands, dsrc, dev = hit_dobs(ix, h)
+    cands, dsrc, dev, hit_dob_fragile = hit_dobs(ix, h)
     dob_agree = any(dob_agrees(cd, c) for c in cands) if cands and cd else False
     dob_contra = bool(cands) and cd is not None and all(dob_contradicts(cd, c) for c in cands)
     if h_company and not cf["company"]:
@@ -495,8 +631,9 @@ def decide_person(ix, alert, h, cf):
     if dob_contra:
         hd = "; ".join(c["text"] for c in cands)
         what = "listed date of birth is" if dsrc == "listed date of birth" else f"{dsrc} put its birth year at"
+        fragile_d = bool(cf.get("dob_from_note")) or bool(hit_dob_fragile)
         contra.append(("DOB_MISMATCH", f"The customer's date of birth is {fmt_date(cd)} ({cd_src}) but the "
-                                       f"hit's {what} {hd}.", [cd_src] + dev))
+                                       f"hit's {what} {hd}.", [cd_src] + dev, fragile_d))
 
     # Names
     cust_is_company = cf["company"]
@@ -511,7 +648,8 @@ def decide_person(ix, alert, h, cf):
         if name_ok_for_decision and name_pair is None:
             contra.append(("NAME_MISMATCH_VERIFIED",
                            f"The customer's verified name is {vname} ({cf['verified']['id']}), which does not "
-                           f"match the hit's name {h.get('name')}.", [cf["verified"]["id"]]))
+                           f"match the hit's name {h.get('name')}.", [cf["verified"]["id"]],
+                           bool(cf.get("name_from_note"))))
     else:
         rparts = [names.parts(n, cust_is_company) for n in cf["record_names"]]
         if not cust_is_company and not any(len(p) >= 2 for p in rparts):
@@ -527,10 +665,21 @@ def decide_person(ix, alert, h, cf):
     if loc_contra and not (name_agree and dob_agree):
         contra.append(("LOCATION_MISMATCH",
                        f"The customer is linked only to {', '.join(sorted(cc))} but the hit is linked only to "
-                       f"{', '.join(sorted(hc))}.", sorted(set(cc.values()))))
+                       f"{', '.join(sorted(hc))}.", sorted(set(cc.values())), False))
 
     if contra:
-        code, sent, ev = contra[0]
+        # SOP: clearing a real match is the worst mistake; when in doubt, REVIEW.
+        # Unsure free-text parses may hint at a contradiction but must not clear alone.
+        all_fragile = all(c[3] for c in contra)
+        unusual = bool(cf.get("note_unusual"))
+        if all_fragile and unusual:
+            evid = []
+            for c in contra[:2]:
+                evid.extend(c[2])
+            reason = ("A possible contradiction rests only on free-text parsing that is not reliable enough "
+                      "to clear the hit, so a person must review it. " + " ".join(c[1] for c in contra[:2]))
+            return "REVIEW", "INSUFFICIENT_DATA", reason, evid
+        code, sent, ev, _frag = contra[0]
         reason = " ".join(c[1] for c in contra[:2])
         evid = []
         for c in contra[:2]:
@@ -580,7 +729,7 @@ def decide_hit(ix, alert, h):
                           "can be neither cleared nor confirmed.", "evidence": [], "path": path}
     results = []
     for p in persons:
-        cf = customer_facts(ix, p)
+        cf = customer_facts(ix, p, alert)
         results.append((p, decide_person(ix, alert, h, cf)))
     if len(results) == 1:
         p, (dec, code, reason, ev) = results[0]
