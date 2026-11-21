@@ -6,6 +6,7 @@ from engine import (as_list, parse_date, dates_in_text, fmt_date, full_date, to_
                     countries_in_text, strip_accents, MONTHS, LISTING_PHRASES, OTHER_LISTING,
                     PLACEHOLDERS, KNOWN_COUNTRIES, COUNTRY_ALIASES, DATE_IN_TEXT,
                     dob_interpretation_alts)
+import llm_locate  # optional; dormant without OPENROUTER_API_KEY
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +315,7 @@ def parse_kyc_note(note, names_obj, anchors, providers=None):
         "unusual": False, "dob_keyword_anchored": False,
         "dob_keyword_before": False, "dob_keyword_after_only": False,
         "name_from_title_case": False, "name_check_failed": False,
-        "rejected": False,
+        "rejected": False, "llm_located": False,
     }
     # Principle 4: status applies before any identity extraction.
     if _FAILED_KYC_NOTE_RE.search(text):
@@ -376,16 +377,52 @@ def parse_kyc_note(note, names_obj, anchors, providers=None):
     if dob is None and len(non_created) == 1 and _year_ok(non_created[0][3], created):
         dob, dob_keyword_anchored = non_created[0][3], False
 
-    # Unusual DOB only: no keyword on either side AND more than one non-created_at date.
-    # Name failure must not poison the DOB (principle 4: verified DOB is still verified).
-    unusual = bool(dob is not None and not dob_keyword_anchored and len(non_created) > 1)
-    countries = countries_in_text(text)
+    llm_located = False
     dob_raw = None
     if dob is not None:
         for start, end, raw, d in dated:
             if d == dob:
                 dob_raw = raw
                 break
+
+    # Adaptive locator: only when regex missed a field. Failed notes already returned above.
+    if dob is None:
+        quote = llm_locate.locate(text, "customer_dob")
+        if quote:
+            q = quote.strip()
+            d = parse_date(q)
+            if d is None:
+                for m in DATE_IN_TEXT.finditer(q):
+                    d = parse_date(m.group(0))
+                    if d:
+                        q = m.group(0)
+                        break
+            if d and _year_ok(d, created):
+                idx = text.find(q)
+                if idx >= 0:
+                    near, before, after = _birth_keyword_sides(text, idx, idx + len(q))
+                    if near:
+                        dob, dob_keyword_anchored = d, True
+                        dob_keyword_before = before
+                        dob_keyword_after_only = (not before) and after
+                        dob_raw = q
+                        llm_located = True
+
+    if name is None:
+        quote = llm_locate.locate(text, "customer_name")
+        if quote:
+            trusted, failed = _trust_note_name(quote.strip(), names_obj, anchors, blocklist)
+            if trusted:
+                name, name_check_failed = trusted, False
+                name_from_title_case = not quote.isupper()
+                llm_located = True
+            elif failed:
+                name_check_failed = True
+
+    # Unusual DOB only: no keyword on either side AND more than one non-created_at date.
+    # Name failure must not poison the DOB (principle 4: verified DOB is still verified).
+    unusual = bool(dob is not None and not dob_keyword_anchored and len(non_created) > 1)
+    countries = countries_in_text(text)
     return {"name": name, "dob": dob, "dob_raw": dob_raw,
             "country": countries[0] if countries else None,
             "date": created, "id": note.get("note_id"), "source": "note",
@@ -394,7 +431,8 @@ def parse_kyc_note(note, names_obj, anchors, providers=None):
             "dob_keyword_after_only": dob_keyword_after_only,
             "name_from_title_case": name_from_title_case,
             "name_check_failed": name_check_failed,
-            "rejected": False}
+            "rejected": False,
+            "llm_located": llm_located}
 
 
 def customer_facts(ix, person, alert=None):
@@ -418,7 +456,8 @@ def customer_facts(ix, person, alert=None):
                              "country": norm_country(k.get("document_country")),
                              "date": parse_date(k.get("checked_at")), "id": k.get("check_id"), "source": "kyc",
                              "unusual": False, "name_from_title_case": False,
-                             "dob_keyword_after_only": False, "name_check_failed": False})
+                             "dob_keyword_after_only": False, "name_check_failed": False,
+                             "llm_located": False})
     notes_seen = set()
     lived = {}
     for rid in person:
@@ -473,6 +512,7 @@ def customer_facts(ix, person, alert=None):
     name_from_title_case = bool(latest and latest.get("source") == "note" and latest.get("name_from_title_case"))
     note_name_failed = bool(latest and latest.get("source") == "note" and latest.get("name_check_failed"))
     dob_keyword_after_only = bool(latest and latest.get("source") == "note" and latest.get("dob_keyword_after_only"))
+    llm_located = bool(latest and latest.get("source") == "note" and latest.get("llm_located"))
     return {
         "records": person, "company": company, "verified": latest,
         "verified_name": latest["name"] if latest else None,
@@ -482,6 +522,7 @@ def customer_facts(ix, person, alert=None):
         "note_unusual": note_unusual, "dob_from_note": dob_from_note, "name_from_note": name_from_note,
         "name_from_title_case": name_from_title_case, "note_name_failed": note_name_failed,
         "dob_keyword_after_only": dob_keyword_after_only,
+        "llm_located": llm_located,
     }
 
 
@@ -579,10 +620,12 @@ def listing_phrase(h):
 
 
 def hit_dobs(ix, h):
-    """Return (candidates, source_label, evidence_ids, from_profile_notes).
+    """Return (candidates, source_label, evidence_ids, from_profile_notes, meta).
 
     Each candidate: dict(years, month, day). from_profile_notes marks a fragile DOB.
+    meta may include llm_located / age_derived for adaptive safety.
     """
+    meta = {"llm_located": False, "age_derived": False}
     cands = []
     for v in as_list(h.get("dobs")):
         d = parse_date(v)
@@ -591,10 +634,10 @@ def hit_dobs(ix, h):
     # POLICY principle 5: "For companies, only the dobs field is an incorporation date."
     if (h.get("entity_type") or "").lower().startswith("comp"):
         if cands:
-            return cands, "listed date of birth", [], False
-        return [], None, [], False
+            return cands, "listed date of birth", [], False, meta
+        return [], None, [], False, meta
     if cands:
-        return cands, "listed date of birth", [], False
+        return cands, "listed date of birth", [], False, meta
     notes = (h.get("profile_notes") or "").strip()
     if notes:
         first = re.split(r"\n\s*\n", notes)[0].strip()
@@ -604,11 +647,33 @@ def hit_dobs(ix, h):
             if m:
                 d = parse_date(m.group(1).strip())
             if d:
-                return [{"years": [d[0]], "month": d[1], "day": d[2], "text": fmt_date(d)}], "profile notes", [], True
+                return ([{"years": [d[0]], "month": d[1], "day": d[2], "text": fmt_date(d)}],
+                        "profile notes", [], True, meta)
             ys = age_years(first)
             if ys:
-                return [{"years": ys, "month": None, "day": None,
-                         "text": f"{ys[0]} or {ys[1]}"}], "profile notes", [], True
+                meta["age_derived"] = True
+                return ([{"years": ys, "month": None, "day": None,
+                          "text": f"{ys[0]} or {ys[1]}"}], "profile notes", [], True, meta)
+            # Adaptive: locate the birth/age sentence, then parse with our regexes.
+            quote = llm_locate.locate(first, "hit_dob_sentence")
+            if quote and quote in first:
+                m = re.search(r"born (?:on |in )?(.+?)(?:\.|$|,| in [A-Z])", quote)
+                d = parse_date(m.group(1).strip()) if m else parse_date(quote.strip())
+                if d is None:
+                    for mm in DATE_IN_TEXT.finditer(quote):
+                        d = parse_date(mm.group(0))
+                        if d:
+                            break
+                if d:
+                    meta["llm_located"] = True
+                    return ([{"years": [d[0]], "month": d[1], "day": d[2], "text": fmt_date(d)}],
+                            "profile notes", [], True, meta)
+                ys = age_years(quote) or age_years(first)
+                if ys:
+                    meta["llm_located"] = True
+                    meta["age_derived"] = True
+                    return ([{"years": ys, "month": None, "day": None,
+                              "text": f"{ys[0]} or {ys[1]}"}], "profile notes", [], True, meta)
     # web search results: only those describing the same kind of listing in a country tied to the hit
     phrase = listing_phrase(h)
     hc = set(hit_countries(h))
@@ -624,8 +689,8 @@ def hit_dobs(ix, h):
             cands.append({"years": ys, "month": None, "day": None, "text": f"{ys[0]} or {ys[1]}"})
             ev.append(s.get("result_id"))
     if cands:
-        return cands, "search results", ev, False
-    return [], None, [], False
+        return cands, "search results", ev, False, meta
+    return [], None, [], False, meta
 
 
 def earliest_report(h):
@@ -744,7 +809,7 @@ POLICY_RULES = {
 }
 
 
-def make_trace(reason_code, facts, resolution, fragile_guard=False):
+def make_trace(reason_code, facts, resolution, fragile_guard=False, llm_located=False):
     meta = POLICY_RULES.get(reason_code, {"principle": "?", "rule": ""})
     if isinstance(facts, str):
         facts = [facts] if facts else []
@@ -753,6 +818,7 @@ def make_trace(reason_code, facts, resolution, fragile_guard=False):
         "rule": meta["rule"],
         "facts": list(facts),
         "fragile_guard": bool(fragile_guard),
+        "llm_located": bool(llm_located),
         "resolution": list(resolution or []),
     }
 
@@ -785,19 +851,25 @@ def decide_person(ix, alert, h, cf):
     rep = earliest_report(h)
     if rep and cd:
         fragile_t = bool(cf.get("dob_from_note"))
-        if cf["company"]:
-            if to_pydate(cd) and to_pydate(rep) and to_pydate(cd) > to_pydate(rep):
+        llm_blocks_temporal = bool(
+            cf.get("llm_located") and cf.get("dob_from_note") and not (
+                (cd[1] and cd[2]) or (cd[0] and cd[1] is None and cd[2] is None)
+            )
+        )
+        if not llm_blocks_temporal:
+            if cf["company"]:
+                if to_pydate(cd) and to_pydate(rep) and to_pydate(cd) > to_pydate(rep):
+                    contra.append(("TEMPORAL_IMPOSSIBILITY",
+                                   f"The customer was incorporated on {fmt_date(cd)} ({cd_src}), after the hit's "
+                                   f"profile reports activity on {fmt_date(rep)}.", [cd_src], fragile_t))
+            elif younger_than_16(cd, rep):
                 contra.append(("TEMPORAL_IMPOSSIBILITY",
-                               f"The customer was incorporated on {fmt_date(cd)} ({cd_src}), after the hit's "
-                               f"profile reports activity on {fmt_date(rep)}.", [cd_src], fragile_t))
-        elif younger_than_16(cd, rep):
-            contra.append(("TEMPORAL_IMPOSSIBILITY",
-                           f"The customer was born in {cd[0]} ({cd_src}), so they were at most "
-                           f"{max(0, rep[0] - cd[0])} when the hit's profile reports activity on {fmt_date(rep)}.",
-                           [cd_src], fragile_t))
+                               f"The customer was born in {cd[0]} ({cd_src}), so they were at most "
+                               f"{max(0, rep[0] - cd[0])} when the hit's profile reports activity on {fmt_date(rep)}.",
+                               [cd_src], fragile_t))
 
     # Date of birth
-    cands, dsrc, dev, hit_dob_fragile = hit_dobs(ix, h)
+    cands, dsrc, dev, hit_dob_fragile, hit_dob_meta = hit_dobs(ix, h)
     # Ambiguous numeric customer DOBs (e.g. 03/04/1965): agreement if ANY reading
     # agrees; clearance only if EVERY reading contradicts every hit candidate.
     dob_alts = cf.get("dob_alts") or ([cd] if cd else [])
@@ -810,6 +882,20 @@ def decide_person(ix, alert, h, cf):
     )
     if h_company and not cf["company"]:
         dob_agree = dob_contra = False
+    def _llm_dob_clear_ok(d):
+        """LLM-located DOB may clear only with a complete date or an explicit year."""
+        if not d or d[0] is None:
+            return False
+        if d[1] is None and d[2] is None:
+            return True  # explicit year
+        return bool(d[1] and d[2])  # complete date
+
+    # Adaptive safety: age-derived LLM hit years may confirm/REVIEW but never clear.
+    if dob_contra and hit_dob_meta.get("llm_located") and hit_dob_meta.get("age_derived"):
+        dob_contra = False
+    # Adaptive safety: LLM-located customer DOB needs full date or explicit year to clear.
+    if dob_contra and cf.get("llm_located") and cf.get("dob_from_note") and not _llm_dob_clear_ok(cd):
+        dob_contra = False
     if dob_contra:
         hd = "; ".join(c["text"] for c in cands)
         what = "listed date of birth is" if dsrc == "listed date of birth" else f"{dsrc} put its birth year at"
@@ -828,10 +914,14 @@ def decide_person(ix, alert, h, cf):
             name_ok_for_decision = False
         name_pair = names.any_agree([vname], hn, cust_is_company)
         if name_ok_for_decision and name_pair is None:
-            contra.append(("NAME_MISMATCH_VERIFIED",
-                           f"The customer's verified name is {vname} ({cf['verified']['id']}), which does not "
-                           f"match the hit's name {h.get('name')}.", [cf["verified"]["id"]],
-                           bool(cf.get("name_from_note"))))
+            # Adaptive safety: LLM-located name may never be the sole basis for this clear.
+            if cf.get("llm_located") and cf.get("name_from_note"):
+                pass  # fall through; contradiction not recorded → REVIEW path later
+            else:
+                contra.append(("NAME_MISMATCH_VERIFIED",
+                               f"The customer's verified name is {vname} ({cf['verified']['id']}), which does not "
+                               f"match the hit's name {h.get('name')}.", [cf["verified"]["id"]],
+                               bool(cf.get("name_from_note"))))
     else:
         rparts = [names.parts(n, cust_is_company) for n in cf["record_names"]]
         if not cust_is_company and not any(len(p) >= 2 for p in rparts):
@@ -858,13 +948,14 @@ def decide_person(ix, alert, h, cf):
         evid = []
         for c in contra[:2]:
             evid.extend(c[2])
+        llm_flag = bool(cf.get("llm_located") or hit_dob_meta.get("llm_located"))
         if all_fragile and unusual:
             reason = ("A possible contradiction rests only on free-text parsing that is not reliable enough "
                       "to clear the hit, so a person must review it. " + " ".join(facts))
-            return "REVIEW", "INSUFFICIENT_DATA", reason, evid, True, facts
+            return "REVIEW", "INSUFFICIENT_DATA", reason, evid, True, facts, llm_flag
         code = contra[0][0]
         reason = " ".join(facts)
-        return "DIFFERENT_ENTITY", code, reason, evid, False, facts
+        return "DIFFERENT_ENTITY", code, reason, evid, False, facts, llm_flag
 
     agree_bits = []
     evid = []
@@ -894,23 +985,25 @@ def decide_person(ix, alert, h, cf):
             fragile_confirm = True
         if cf.get("dob_from_note") and cf.get("note_name_failed") and not cf.get("verified_name"):
             fragile_confirm = True
+    llm_flag = bool(cf.get("llm_located") or hit_dob_meta.get("llm_located"))
     if fragile_confirm:
         reason = ("Agreement rests only on free-text parsing that is not reliable enough to confirm "
                   "the hit, so a person must review it. " + " ".join(agree_bits))
-        return "REVIEW", "INSUFFICIENT_DATA", reason, evid, True, list(agree_bits)
+        return "REVIEW", "INSUFFICIENT_DATA", reason, evid, True, list(agree_bits), llm_flag
 
     if cf["company"] and h_company:
         if name_agree and loc_agree:
-            return "SAME_ENTITY", "NAME_LOCATION_MATCH", " ".join(agree_bits), evid, False, list(agree_bits)
+            return ("SAME_ENTITY", "NAME_LOCATION_MATCH", " ".join(agree_bits), evid, False,
+                    list(agree_bits), llm_flag)
     elif name_agree and dob_agree:
         # POLICY: "A country difference does not clear a hit whose name and date of birth agree: that hit is REVIEW."
         if loc_contra:
             tail = ("The name and date of birth agree but the countries differ, so the hit can be neither "
                     "cleared nor confirmed.")
             facts = list(agree_bits) + [tail]
-            return "REVIEW", "INSUFFICIENT_DATA", " ".join(facts), evid, False, facts
+            return "REVIEW", "INSUFFICIENT_DATA", " ".join(facts), evid, False, facts, llm_flag
         code = "NAME_DOB_LOCATION_MATCH" if loc_agree else "NAME_DOB_MATCH"
-        return "SAME_ENTITY", code, " ".join(agree_bits), evid, False, list(agree_bits)
+        return ("SAME_ENTITY", code, " ".join(agree_bits), evid, False, list(agree_bits), llm_flag)
 
     tail = ("Nothing in the customer's records contradicts the hit, and the evidence does not show enough "
             "agreement to confirm it, so the hit can be neither cleared nor confirmed.")
@@ -921,7 +1014,7 @@ def decide_person(ix, alert, h, cf):
         tail = ("The name and date of birth agree but the countries differ, so the hit can be neither cleared "
                 "nor confirmed.")
     facts = list(agree_bits) + [tail]
-    return "REVIEW", "INSUFFICIENT_DATA", " ".join(facts), evid, False, facts
+    return "REVIEW", "INSUFFICIENT_DATA", " ".join(facts), evid, False, facts, llm_flag
 
 
 def decide_hit(ix, alert, h):
@@ -937,10 +1030,10 @@ def decide_hit(ix, alert, h):
         cf = customer_facts(ix, p, alert)
         results.append((p, decide_person(ix, alert, h, cf)))
     if len(results) == 1:
-        p, (dec, code, reason, ev, fragile, facts) = results[0]
+        p, (dec, code, reason, ev, fragile, facts, llm_flag) = results[0]
         return {"decision": dec, "reason_code": code, "customer_record_id": p[0], "reason": reason,
                 "evidence": _clean(ev), "path": path,
-                "trace": make_trace(code, facts, path, fragile_guard=fragile)}
+                "trace": make_trace(code, facts, path, fragile_guard=fragile, llm_located=llm_flag)}
     decs = {r[1][0] for r in results}
     allev = []
     for p, r in results:
@@ -948,12 +1041,13 @@ def decide_hit(ix, alert, h):
         allev.extend(r[3])
     recs = ", ".join("/".join(p) for p, _ in results)
     if len(decs) == 1:
-        p, (dec, code, reason, ev, fragile, facts) = results[0]
+        p, (dec, code, reason, ev, fragile, facts, llm_flag) = results[0]
         reason = (f"{len(results)} different people fit the alert ({recs}) and each leads to the same "
                   f"decision. " + reason)
+        any_llm = any(r[1][6] for _, r in results)
         return {"decision": dec, "reason_code": code, "customer_record_id": "AMBIGUOUS",
                 "reason": reason, "evidence": _clean(allev), "path": path,
-                "trace": make_trace(code, facts, path, fragile_guard=fragile)}
+                "trace": make_trace(code, facts, path, fragile_guard=fragile, llm_located=any_llm)}
     reason = (f"{len(results)} different people fit the alert ({recs}) and they lead to different "
               f"decisions ({', '.join(sorted(decs))}), so a person must review it.")
     return {"decision": "REVIEW", "reason_code": "AMBIGUOUS_CUSTOMER_RECORD", "customer_record_id": "AMBIGUOUS",
