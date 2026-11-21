@@ -3,7 +3,7 @@
 
 Resolves a customer via account_ref / login_handle / email, then decides
 SAME_ENTITY only when hit.name equals a customer full_name after lowercase+strip.
-No accent folding, no fuzzy matching — a harsh demo foil for ClearGuard.
+No accent folding, no fuzzy matching — a harsh demo foil for SNIFF.
 """
 from __future__ import annotations
 

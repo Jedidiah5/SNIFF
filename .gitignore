@@ -18,3 +18,7 @@ _mutate_freetext.py
 _spotcheck.py
 output/debug.jsonl
 output/_spot.json
+
+# Harness reports (may contain data-derived detail)
+harness/*.json
+harness/*.html

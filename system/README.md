@@ -2,7 +2,7 @@
 
 Track 2 (Sanctions screening): is this screening hit really our customer?
 
-Team: [names]
+Team: Jedidiah Onotu, Collins
 
 For each screening hit we decide **SAME_ENTITY**, **DIFFERENT_ENTITY**, or **REVIEW**, following `POLICY.md` literally. We clear only when a fact contradicts the hit, confirm only when name and date of birth (or name and country for a company) agree and nothing contradicts them, and otherwise send the hit to **REVIEW**. An unsafe clear costs 60 points; when the evidence is thin we prefer REVIEW.
 
@@ -114,7 +114,8 @@ Regex parsing of free text can miss wordings we have not seen; the mitigation is
 - `output/dev.jsonl` — predictions on the dev set
 - `tests/test_sop_rules.py` — 17 rule tests for situations rare in the dev data
 - `docs/POLICY_MAP.md` — each reason code mapped to its exact policy sentence
-- `harness/` — test-to-fail mutation harness. Results: [to be added]
+- `harness/` — test-to-fail mutation harness. Results: 108 mutations from 12 true matches: 85 stayed SAME, 15 moved to REVIEW, 8 correctly became DIFFERENT when we injected a verified conflicting date of birth. Unsafe clears: 0.
+- `baseline/` — name-only foil baseline
 - `console/` — static policy-trace viewer built on `--debug`. [to be added]
 
 ## How to run

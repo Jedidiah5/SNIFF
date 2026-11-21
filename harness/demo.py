@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ClearGuard live-demo entry point for the trick-test harness.
+"""SNIFF live-demo entry point for the trick-test harness.
 
 Runs system/run as a black box against mutated copies of the official data.
 Writes JSON + HTML reports with metrics computed from the run (never hardcoded).
@@ -26,11 +26,11 @@ SHOWCASE_HITS = ("H-582410", "H-4D76E3", "H-02115F")
 
 
 def main(argv=None) -> int:
-    p = argparse.ArgumentParser(description="ClearGuard trick-test demo runner")
+    p = argparse.ArgumentParser(description="SNIFF trick-test demo runner")
     p.add_argument("--data", required=True, help="Official screening/dev folder (outside the repo)")
     p.add_argument(
         "--out-dir",
-        default="/tmp/clearguard-harness/demo",
+        default="/tmp/sniff-harness/demo",
         help="Directory for JSON + HTML reports",
     )
     p.add_argument(
@@ -59,7 +59,7 @@ def main(argv=None) -> int:
     if args.quick:
         cmd.extend(["--hit-ids", ",".join(SHOWCASE_HITS)])
 
-    print("ClearGuard trick-test demo")
+    print("SNIFF trick-test demo")
     print(f"  data:  {args.data}")
     print(f"  json:  {json_path}")
     print(f"  html:  {html_path}")

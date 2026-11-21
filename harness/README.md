@@ -1,6 +1,18 @@
-# ClearGuard trick-test harness
+# SNIFF trick-test harness
 
 Black-box test-to-fail for the sanctions engine. Copies the official dataset to a temp folder, applies **one** named mutation, runs `system/run`, and compares original vs mutated decisions. Expected outcomes are evaluation-only — they never enter the engine.
+
+## Results
+
+108 mutations from 12 true matches: 85 stayed SAME, 15 moved to REVIEW, 8 correctly became DIFFERENT when we injected a verified conflicting date of birth. Unsafe clears: 0.
+
+| Count | Outcome |
+|---|---|
+| 108 | mutations from 12 true matches |
+| 85 | stayed SAME |
+| 15 | moved to REVIEW |
+| 8 | correctly became DIFFERENT (verified conflicting DOB) |
+| 0 | unsafe clears |
 
 ## Mutations
 
@@ -26,15 +38,15 @@ python3 harness/demo.py --data /path/to/screening/dev --quick
 python3 harness/demo.py --data /path/to/screening/dev
 ```
 
-Open the HTML it prints (`demo_report.html`). Metrics are computed from that run.
+Open the HTML it prints (`demo_report.html`). Metrics are computed from that run. JSON/HTML reports are gitignored.
 
 ## Full harness CLI
 
 ```bash
 python3 harness/mutate.py \
   --data /path/to/screening/dev \
-  --out /tmp/clearguard-harness/report.json \
-  --html /tmp/clearguard-harness/report.html \
+  --out /tmp/sniff-harness/report.json \
+  --html /tmp/sniff-harness/report.html \
   --seeds practice
 ```
 
